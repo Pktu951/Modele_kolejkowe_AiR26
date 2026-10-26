@@ -8,98 +8,98 @@ N = 20                  # liczba robotów
 C = 3                   # liczba ładowarek
 ALPHA = 0.1             # intensywność zgłoszeń jednego robota
 MU = 0.5                # intensywność ładowania jednej ładowarki
-CZAS_SYMULACJI = 100_000.0
-ROZGRZEWKA = 10_000.0   # początkowy czas pomijany w pomiarach
-MIN_ROBOTOW = 10        # wymagane minimum robotów dostępnych do pracy
-ZIARNO = 1              # None oznacza losowe wyniki przy każdym uruchomieniu
+SIMULATION_TIME = 100_000.0
+WARMUP = 10_000.0   # początkowy czas pomijany w pomiarach
+MIN_ROBOTS = 10        # wymagane minimum robotów dostępnych do pracy
+SEED = 1              # None oznacza losowe wyniki przy każdym uruchomieniu
 
 
-def symuluj(n, c, alpha, mu, czas, rozgrzewka, minimum, ziarno):
+def simulate(robot_count, charger_count, work_rate, charge_rate, duration, warmup, min_available, seed):
     """Uruchamia jedną replikację; zwraca słownik z wynikami symulacji."""
-    if n < 1:
+    if robot_count < 1:
         raise ValueError("Liczba robotów N musi być dodatnia.")
-    if not 1 <= c <= n:
+    if not 1 <= charger_count <= robot_count:
         raise ValueError("Liczba ładowarek c musi spełniać 1 <= c <= N.")
-    if alpha <= 0 or mu <= 0 or czas <= 0:
+    if work_rate <= 0 or charge_rate <= 0 or duration <= 0:
         raise ValueError("Alpha, mu i czas symulacji muszą być dodatnie.")
-    if not all(math.isfinite(x) for x in (alpha, mu, czas, rozgrzewka)):
+    if not all(math.isfinite(x) for x in (work_rate, charge_rate, duration, warmup)):
         raise ValueError("Parametry symulacji muszą być skończone.")
-    if not 0 <= rozgrzewka < czas:
+    if not 0 <= warmup < duration:
         raise ValueError("Rozgrzewka musi być w zakresie od zera do czasu symulacji.")
-    if not 0 <= minimum <= n:
+    if not 0 <= min_available <= robot_count:
         raise ValueError("Minimalna liczba robotów musi być w zakresie 0..N.")
 
-    rng = random.Random(ziarno)
-    teraz = 0.0
-    kolejka = deque()
-    ladujace = zdarzenia = oczekiwania = zakonczone_ladowania = 0
-    suma_oczekiwania = pole_kolejki = zajetosc_ladowarek = 0.0
-    dostepne_roboty = czas_niedoboru = 0.0
-    czas_pomiaru = czas - rozgrzewka
+    random_generator = random.Random(seed)
+    current_time = 0.0
+    queue = deque()
+    charging = events = wait_samples = completed_charges = 0
+    total_wait = queue_area = charger_busy_area = 0.0
+    available_robot_area = shortage_time = 0.0
+    measurement_time = duration - warmup
 
-    while teraz < czas:
-        w_systemie = ladujace + len(kolejka)
-        naplyw = (n - w_systemie) * alpha
-        zakonczenia = min(w_systemie, c) * mu
-        intensywnosc = naplyw + zakonczenia
-        if intensywnosc == 0:
+    while current_time < duration:
+        in_system = charging + len(queue)
+        arrival_rate = (robot_count - in_system) * work_rate
+        completion_rate = min(in_system, charger_count) * charge_rate
+        total_rate = arrival_rate + completion_rate
+        if total_rate == 0:
             break
 
-        nastepne = teraz + rng.expovariate(intensywnosc)
-        koniec_przedzialu = min(nastepne, czas)
-        zmierzony_czas = max(0.0, koniec_przedzialu - max(teraz, rozgrzewka))
-        if zmierzony_czas:
-            pracujace = n - w_systemie
-            pole_kolejki += len(kolejka) * zmierzony_czas
-            zajetosc_ladowarek += ladujace * zmierzony_czas
-            dostepne_roboty += pracujace * zmierzony_czas
-            if pracujace < minimum:
-                czas_niedoboru += zmierzony_czas
+        next_event_time = current_time + random_generator.expovariate(total_rate)
+        interval_end = min(next_event_time, duration)
+        measured_interval = max(0.0, interval_end - max(current_time, warmup))
+        if measured_interval:
+            working_robots = robot_count - in_system
+            queue_area += len(queue) * measured_interval
+            charger_busy_area += charging * measured_interval
+            available_robot_area += working_robots * measured_interval
+            if working_robots < min_available:
+                shortage_time += measured_interval
 
-        teraz = koniec_przedzialu
-        if teraz >= czas:
+        current_time = interval_end
+        if current_time >= duration:
             break
-        if teraz >= rozgrzewka:
-            zdarzenia += 1
+        if current_time >= warmup:
+            events += 1
 
-        if rng.random() < naplyw / intensywnosc:
+        if random_generator.random() < arrival_rate / total_rate:
             # Robot kończy pracę; wolna ładowarka obsługuje go od razu.
-            if ladujace < c:
-                ladujace += 1
-                if teraz >= rozgrzewka:
-                    oczekiwania += 1
+            if charging < charger_count:
+                charging += 1
+                if current_time >= warmup:
+                    wait_samples += 1
             else:
-                kolejka.append(teraz)
+                queue.append(current_time)
         else:
             # Ładowanie się kończy; następny robot jest obsługiwany FIFO.
-            if teraz >= rozgrzewka:
-                zakonczone_ladowania += 1
-            if kolejka:
-                zgloszenie = kolejka.popleft()
-                if teraz >= rozgrzewka:
-                    suma_oczekiwania += teraz - zgloszenie
-                    oczekiwania += 1
+            if current_time >= warmup:
+                completed_charges += 1
+            if queue:
+                arrival_time = queue.popleft()
+                if current_time >= warmup:
+                    total_wait += current_time - arrival_time
+                    wait_samples += 1
             else:
-                ladujace -= 1
+                charging -= 1
 
     return {
-        "średni czas oczekiwania": suma_oczekiwania / oczekiwania if oczekiwania else 0.0,
-        "średnia długość kolejki": pole_kolejki / czas_pomiaru,
-        "wykorzystanie ładowarek": zajetosc_ladowarek / (c * czas_pomiaru),
-        "średnia liczba dostępnych robotów": dostepne_roboty / czas_pomiaru,
-        "udział dostępnych robotów": dostepne_roboty / (n * czas_pomiaru),
-        "prawdopodobieństwo dostępności poniżej minimum": czas_niedoboru / czas_pomiaru,
-        "zakończone ładowania": zakonczone_ladowania,
-        "liczba zdarzeń": zdarzenia,
+        "średni czas oczekiwania": total_wait / wait_samples if wait_samples else 0.0,
+        "średnia długość kolejki": queue_area / measurement_time,
+        "wykorzystanie ładowarek": charger_busy_area / (charger_count * measurement_time),
+        "średnia liczba dostępnych robotów": available_robot_area / measurement_time,
+        "udział dostępnych robotów": available_robot_area / (robot_count * measurement_time),
+        "prawdopodobieństwo dostępności poniżej minimum": shortage_time / measurement_time,
+        "zakończone ładowania": completed_charges,
+        "liczba zdarzeń": events,
     }
 
 
 def main():
     print(f"Parametry: N={N}, c={C}, alpha={ALPHA}, mu={MU}")
-    print(f"Czas symulacji: {CZAS_SYMULACJI}, rozgrzewka: {ROZGRZEWKA}, minimum robotów: {MIN_ROBOTOW}\n")
+    print(f"Czas symulacji: {SIMULATION_TIME}, rozgrzewka: {WARMUP}, minimum robotów: {MIN_ROBOTS}\n")
     print("Wyniki po rozgrzewce:")
-    for nazwa, wynik in symuluj(N, C, ALPHA, MU, CZAS_SYMULACJI, ROZGRZEWKA, MIN_ROBOTOW, ZIARNO).items():
-        print(f"{nazwa}: {wynik:.6f}")
+    for name, value in simulate(N, C, ALPHA, MU, SIMULATION_TIME, WARMUP, MIN_ROBOTS, SEED).items():
+        print(f"{name}: {value:.6f}")
 
 
 if __name__ == "__main__":

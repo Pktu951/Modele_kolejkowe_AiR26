@@ -1,0 +1,100 @@
+"""Exercise the real Streamlit controls, rendering, validation, and downloads."""
+
+from pathlib import Path
+import sys
+import unittest
+
+from streamlit.testing.v1 import AppTest
+
+PROJECT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT))
+
+
+class AppTests(unittest.TestCase):
+    def app(self):
+        app = AppTest.from_file(str(PROJECT / "app.py")).run(timeout=60)
+        self.assertFalse(app.exception)
+        return app
+
+    def test_open_comparison_and_result_download(self):
+        app = self.app()
+        app.button("run_simulation").click().run(timeout=60)
+        self.assertFalse(app.exception)
+        results = app.session_state["simulation_results"][1]
+        self.assertEqual([r.config.arrival_distribution for r in results], ["poisson", "deterministic"])
+        self.assertEqual(len(app.dataframe), 3)
+        self.assertEqual(len(app.get("download_button")), 1)
+        arrivals = [r.summary["arrivals"] for r in results]
+        app.run(timeout=60)
+        self.assertEqual([r.summary["arrivals"] for r in app.session_state["simulation_results"][1]], arrivals)
+
+    def test_closed_model_and_fleet_settings(self):
+        app = self.app()
+        app.radio("model_choice").set_value("Zamknięty").run(timeout=60)
+        app.number_input("fleet_size").set_value(12)
+        app.number_input("chargers").set_value(3)
+        app.button("run_simulation").click().run(timeout=60)
+        self.assertFalse(app.exception)
+        result = app.session_state["simulation_results"][1][0]
+        self.assertEqual(result.config.model, "closed")
+        self.assertEqual(result.config.fleet_size, 12)
+        self.assertTrue(0 <= result.summary["availability"] <= 1)
+        self.assertTrue(0 <= result.summary["shortage_probability"] <= 1)
+        self.assertEqual(len(app.get("download_button")), 1)
+
+    def test_open_grid_runs_both_distributions(self):
+        app = self.app()
+        app.text_input("grid_chargers").set_value("1,2")
+        app.text_input("grid_rates").set_value("2,4")
+        app.number_input("repetitions").set_value(2)
+        app.button("run_experiments").click().run(timeout=60)
+        self.assertFalse(app.exception)
+        _, raw, summary, _, _ = app.session_state["experiment_results"]
+        self.assertEqual(len(raw), 16)
+        self.assertEqual(len(summary), 8)
+        self.assertEqual(len(app.get("download_button")), 1)
+
+    def test_closed_grid_reports_invalid_cases(self):
+        app = self.app()
+        app.radio("model_choice").set_value("Zamknięty").run(timeout=60)
+        app.number_input("min_available").set_value(1)
+        app.text_input("grid_chargers").set_value("1,3")
+        app.text_input("grid_fleets").set_value("2,4")
+        app.number_input("repetitions").set_value(2)
+        app.button("run_experiments").click().run(timeout=60)
+        self.assertFalse(app.exception)
+        stored = app.session_state["experiment_results"]
+        self.assertEqual(len(stored[1]), 6)
+        self.assertEqual(len(stored[4]), 1)
+        self.assertTrue(any("Pominięto" in warning.value for warning in app.warning))
+
+    def test_stale_results_and_empty_distribution_selection(self):
+        app = self.app()
+        app.button("run_simulation").click().run(timeout=60)
+        app.number_input("chargers").set_value(3).run(timeout=60)
+        self.assertFalse(app.exception)
+        self.assertEqual(len(app.dataframe), 0)
+        app.multiselect("distributions").set_value([]).run(timeout=60)
+        self.assertFalse(app.exception)
+        self.assertTrue(any("Wybierz" in item.value for item in app.info))
+
+    def test_invalid_closed_population_is_visible(self):
+        app = self.app()
+        app.radio("model_choice").set_value("Zamknięty").run(timeout=60)
+        app.number_input("fleet_size").set_value(1).run(timeout=60)
+        self.assertFalse(app.exception)
+        self.assertEqual(len(app.error), 1)
+
+    def test_unstable_open_model_warns_but_runs(self):
+        app = self.app()
+        app.number_input("arrival_rate").set_value(12.0)
+        app.number_input("duration_hours").set_value(1.0)
+        app.multiselect("distributions").set_value(["deterministic"])
+        app.button("run_simulation").click().run(timeout=60)
+        self.assertFalse(app.exception)
+        self.assertTrue(any("u ≥ 1" in item.value for item in app.warning))
+        self.assertEqual(len(app.get("download_button")), 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

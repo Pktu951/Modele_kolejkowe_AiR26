@@ -19,7 +19,6 @@ METRIC_LABELS = {
     "utilization": "Wykorzystanie ładowarek",
     "mean_available_robots": "Średnia liczba dostępnych E[R]",
     "availability": "Dostępność floty A",
-    "shortage_probability": "Ryzyko niedoboru P(R < m)",
 }
 DISTRIBUTION_LABELS = {
     "poisson": "Poisson (M/M/c)",
@@ -56,8 +55,8 @@ def build_scenarios(
     if base.model == "closed":
         for fleet_size in fleet_sizes or [base.fleet_size]:
             for chargers in charger_counts:
-                if chargers > fleet_size or base.min_available > fleet_size:
-                    skipped.append(f"N={fleet_size}, c={chargers}, m={base.min_available}")
+                if chargers > fleet_size:
+                    skipped.append(f"N={fleet_size}, c={chargers}")
                     continue
                 scenarios.append(replace(base, chargers=chargers, fleet_size=fleet_size))
     else:
@@ -71,7 +70,7 @@ def build_scenarios(
     for config in scenarios:
         config.validate()
     if not scenarios:
-        raise ValueError("Brak poprawnych wariantów. W modelu zamkniętym wymagane c ≤ N i m ≤ N.")
+        raise ValueError("Brak poprawnych wariantów. W modelu zamkniętym wymagane c ≤ N.")
     return scenarios, skipped
 
 
@@ -105,7 +104,6 @@ def run_experiments(
                 "duration": config.duration,
                 "mean_charge_time": config.mean_charge_time,
                 "mean_work_time": config.mean_work_time if config.model == "closed" else None,
-                "min_available": config.min_available if config.model == "closed" else None,
                 "offered_utilization": (
                     config.arrival_rate * config.mean_charge_time / config.chargers
                     if config.model == "open" else None
@@ -123,7 +121,7 @@ def summarize_experiments(raw: pd.DataFrame) -> pd.DataFrame:
     metadata = [
         "scenario_id", "model", "distribution", "chargers", "fleet_size",
         "arrival_rate_per_hour", "duration", "mean_charge_time", "mean_work_time",
-        "min_available", "offered_utilization",
+        "offered_utilization",
     ]
     for _, group in raw.groupby("scenario_id", sort=False):
         row = {name: group.iloc[0][name] for name in metadata}

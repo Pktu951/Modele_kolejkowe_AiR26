@@ -14,7 +14,6 @@ class SimulationConfig:
     arrival_distribution: str = "poisson"
     fleet_size: int = 10
     mean_work_time: float = 120.0
-    min_available: int = 7
     seed: int = 42
     sample_count: int = 301
     max_events: int = 500_000
@@ -37,13 +36,9 @@ class SimulationConfig:
             raise ValueError("Unknown arrival distribution.")
         if not isinstance(self.seed, int) or self.seed < 0:
             raise ValueError("Seed must be a nonnegative integer.")
-        if not isinstance(self.min_available, int) or self.min_available < 0:
-            raise ValueError("Minimum available fleet must be a nonnegative integer.")
         if self.model == "closed":
             if self.chargers > self.fleet_size:
                 raise ValueError("The closed model requires chargers <= fleet size.")
-            if self.min_available > self.fleet_size:
-                raise ValueError("Minimum available fleet cannot exceed fleet size.")
 
     def to_dict(self) -> dict:
         return asdict(self)

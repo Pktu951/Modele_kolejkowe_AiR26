@@ -2,13 +2,12 @@
   {
     "model": "closed",
     "chargers": 1,
-    "duration": 10080,
+    "duration": 10080.0,
     "mean_charge_time": 20,
     "arrival_rate": 0.06666666666666667,
     "arrival_distribution": "poisson",
     "fleet_size": 10,
     "mean_work_time": 120,
-    "min_available": 7,
     "seed": 42,
     "sample_count": 301,
     "max_events": 500000
@@ -16,13 +15,12 @@
   {
     "model": "closed",
     "chargers": 2,
-    "duration": 10080,
+    "duration": 10080.0,
     "mean_charge_time": 20,
     "arrival_rate": 0.06666666666666667,
     "arrival_distribution": "poisson",
     "fleet_size": 10,
     "mean_work_time": 120,
-    "min_available": 7,
     "seed": 42,
     "sample_count": 301,
     "max_events": 500000
@@ -30,13 +28,12 @@
   {
     "model": "closed",
     "chargers": 3,
-    "duration": 10080,
+    "duration": 10080.0,
     "mean_charge_time": 20,
     "arrival_rate": 0.06666666666666667,
     "arrival_distribution": "poisson",
     "fleet_size": 10,
     "mean_work_time": 120,
-    "min_available": 7,
     "seed": 42,
     "sample_count": 301,
     "max_events": 500000
@@ -44,13 +41,12 @@
   {
     "model": "closed",
     "chargers": 1,
-    "duration": 10080,
+    "duration": 10080.0,
     "mean_charge_time": 20,
     "arrival_rate": 0.06666666666666667,
     "arrival_distribution": "poisson",
     "fleet_size": 15,
     "mean_work_time": 120,
-    "min_available": 7,
     "seed": 42,
     "sample_count": 301,
     "max_events": 500000
@@ -58,13 +54,12 @@
   {
     "model": "closed",
     "chargers": 2,
-    "duration": 10080,
+    "duration": 10080.0,
     "mean_charge_time": 20,
     "arrival_rate": 0.06666666666666667,
     "arrival_distribution": "poisson",
     "fleet_size": 15,
     "mean_work_time": 120,
-    "min_available": 7,
     "seed": 42,
     "sample_count": 301,
     "max_events": 500000
@@ -72,13 +67,12 @@
   {
     "model": "closed",
     "chargers": 3,
-    "duration": 10080,
+    "duration": 10080.0,
     "mean_charge_time": 20,
     "arrival_rate": 0.06666666666666667,
     "arrival_distribution": "poisson",
     "fleet_size": 15,
     "mean_work_time": 120,
-    "min_available": 7,
     "seed": 42,
     "sample_count": 301,
     "max_events": 500000
@@ -86,13 +80,12 @@
   {
     "model": "closed",
     "chargers": 1,
-    "duration": 10080,
+    "duration": 10080.0,
     "mean_charge_time": 20,
     "arrival_rate": 0.06666666666666667,
     "arrival_distribution": "poisson",
     "fleet_size": 20,
     "mean_work_time": 120,
-    "min_available": 7,
     "seed": 42,
     "sample_count": 301,
     "max_events": 500000
@@ -100,13 +93,12 @@
   {
     "model": "closed",
     "chargers": 2,
-    "duration": 10080,
+    "duration": 10080.0,
     "mean_charge_time": 20,
     "arrival_rate": 0.06666666666666667,
     "arrival_distribution": "poisson",
     "fleet_size": 20,
     "mean_work_time": 120,
-    "min_available": 7,
     "seed": 42,
     "sample_count": 301,
     "max_events": 500000
@@ -114,13 +106,12 @@
   {
     "model": "closed",
     "chargers": 3,
-    "duration": 10080,
+    "duration": 10080.0,
     "mean_charge_time": 20,
     "arrival_rate": 0.06666666666666667,
     "arrival_distribution": "poisson",
     "fleet_size": 20,
     "mean_work_time": 120,
-    "min_available": 7,
     "seed": 42,
     "sample_count": 301,
     "max_events": 500000

@@ -1,4 +1,4 @@
-"""Polish chart labels; all values come from simulation or analytic benchmarks."""
+"""Polish chart labels; all displayed values come from simulation results."""
 
 import matplotlib
 
@@ -9,7 +9,25 @@ import pandas as pd
 
 from experiments import DISTRIBUTION_LABELS
 from models import SimulationResult
-from theory import theoretical_metrics
+
+
+# PL: Kolor oznacza rozkład/model, a styl linii rozróżnia serie tego samego koloru.
+SERIES_COLORS = {
+    "poisson": "#1f77b4",
+    "deterministic": "#ff7f0e",
+    "closed": "#2ca02c",
+}
+LINE_STYLES = (
+    "-", "--", ":", "-.",
+    (0, (5, 1)), (0, (3, 1, 1, 1)), (0, (5, 1, 1, 1)),
+    (0, (3, 1, 1, 1, 1, 1)), (0, (5, 2, 1, 2, 1, 2)),
+    (0, (1, 3)), (0, (5, 3)), (0, (3, 2, 1, 2)),
+)
+
+
+def _result_color(result: SimulationResult) -> str:
+    key = "closed" if result.config.model == "closed" else result.config.arrival_distribution
+    return SERIES_COLORS[key]
 
 
 def result_label(result: SimulationResult) -> str:
@@ -32,17 +50,11 @@ def _history_panel(results, metrics, title, y_label, probability=False):
     for result in results:
         frame = pd.DataFrame(result.history)
         for index, (metric, label) in enumerate(metrics):
-            line, = axis.plot(
+            axis.plot(
                 frame["time"], frame[metric],
                 label=f"{result_label(result)} · {label}",
-                linestyle="-" if index == 0 else "--", linewidth=1.7,
+                color=_result_color(result), linestyle=LINE_STYLES[index], linewidth=1.7,
             )
-            benchmark = theoretical_metrics(result.config)
-            if benchmark is not None and metric in benchmark:
-                axis.axhline(
-                    benchmark[metric], color=line.get_color(), linestyle=":", alpha=0.8,
-                    label=f"Teoria · {result_label(result)} · {label}",
-                )
     _format_axis(axis, title, y_label, probability)
     # PL: Legenda jest poza obszarem danych, żeby nie zasłaniać przebiegu.
     figure.legend(*axis.get_legend_handles_labels(), loc="outside lower center", fontsize=10, ncol=2 if len(results) > 1 else 1)
@@ -59,8 +71,8 @@ def history_charts(results: list[SimulationResult]) -> dict:
         ),
         "mean_times": _history_panel(
             results,
-            [("mean_wait_time", "W — kolejka"), ("mean_system_time", "T — system")],
-            "Średnie zaobserwowane czasy zgłoszeń", "Czas [min]",
+            [("mean_wait_time", "W — kolejka")],
+            "Średni czas oczekiwania w kolejce", "Czas [min]",
         ),
         "empty_queue": _history_panel(
             results, [("queue_empty_probability", "pusta kolejka")],
@@ -79,7 +91,10 @@ def history_charts(results: list[SimulationResult]) -> dict:
         figure, axis = plt.subplots(figsize=(8.5, 4.5), layout="constrained")
         if result.config.chargers <= 10:
             for count, column in enumerate(columns):
-                axis.plot(frame["time"], frame[column], label=f"P(B={count})")
+                axis.plot(
+                    frame["time"], frame[column], label=f"P(B={count})",
+                    color=_result_color(result), linestyle=LINE_STYLES[count],
+                )
             _format_axis(axis, f"Liczba zajętych ładowarek · {result_label(result)}", "Udział czasu", True)
             figure.legend(*axis.get_legend_handles_labels(), loc="outside lower center", fontsize=10, ncol=min(4, len(columns)))
         else:
@@ -93,8 +108,8 @@ def history_charts(results: list[SimulationResult]) -> dict:
         figures[f"occupancy_{result.config.arrival_distribution if result.config.model == 'open' else 'closed'}"] = figure
     if results[0].config.model == "closed":
         figures["availability"] = _history_panel(
-            results, [("availability", "A"), ("shortage_probability", "P(R < m)")],
-            "Dostępność floty i ryzyko niedoboru od początku symulacji", "Udział czasu", True,
+            results, [("availability", "A")],
+            "Dostępność floty od początku symulacji", "Udział floty", True,
         )
     return figures
 
@@ -106,33 +121,41 @@ def experiment_chart(summary: pd.DataFrame, columns: int = 2):
         ("mean_queue_length", "Średnia liczba w kolejce", "Zgłoszenia"),
         ("mean_system_size", "Średnia liczba w systemie", "Zgłoszenia"),
         ("mean_wait_time", "Średni czas w kolejce", "Minuty"),
-        ("mean_system_time", "Średni czas w systemie", "Minuty"),
         ("queue_empty_probability", "P(pusta kolejka)", "Prawdopodobieństwo"),
         ("utilization", "Wykorzystanie ładowarek", "Udział czasu"),
     ]
     if closed:
         metrics += [
             ("availability", "Dostępność floty A", "Udział floty"),
-            ("shortage_probability", "Ryzyko niedoboru P(R < m)", "Prawdopodobieństwo"),
         ]
+    rows = (len(metrics) + columns - 1) // columns
     figure, axes = plt.subplots(
-        len(metrics) // columns, columns,
-        figsize=(12 if columns == 2 else 8.5, 3.5 * (len(metrics) // columns)),
+        rows, columns,
+        figsize=(12 if columns == 2 else 8.5, 3.5 * rows),
         layout="constrained", squeeze=False,
     )
     grouping = ["fleet_size"] if closed else ["arrival_rate_per_hour", "distribution"]
+    variants = summary["fleet_size" if closed else "arrival_rate_per_hour"].drop_duplicates().tolist()
     for axis, (metric, title, unit) in zip(axes.flat, metrics):
         for group_key, group in summary.groupby(grouping, dropna=False, sort=False):
             group = group.sort_values("chargers")
             key = group_key if isinstance(group_key, tuple) else (group_key,)
             label = f"N={int(key[0])}" if closed else f"λ={key[0]:g}/h · {DISTRIBUTION_LABELS[key[1]]}"
             deviations = group[f"{metric}_std"].fillna(0).to_numpy()
-            axis.errorbar(group["chargers"], group[metric], yerr=deviations, marker="o", capsize=3, label=label)
+            # PL: Różne wartości λ (lub N) mają różne style, ale zachowują kolor rozkładu.
+            axis.errorbar(
+                group["chargers"], group[metric], yerr=deviations,
+                color=SERIES_COLORS["closed" if closed else key[1]],
+                linestyle=LINE_STYLES[variants.index(key[0]) % len(LINE_STYLES)],
+                marker="o", capsize=3, label=label,
+            )
         axis.set_title(title)
         axis.set_xlabel("Liczba ładowarek c")
         axis.set_ylabel(unit)
         axis.set_xticks(sorted(summary["chargers"].unique()))
         axis.grid(alpha=0.25)
+    for axis in list(axes.flat)[len(metrics):]:
+        figure.delaxes(axis)
     figure.legend(*axes.flat[0].get_legend_handles_labels(), loc="outside lower center", fontsize=10, ncol=2)
     figure.suptitle("Eksperymenty — średnia z powtórzeń ± jedno odchylenie standardowe", fontsize=13)
     return figure

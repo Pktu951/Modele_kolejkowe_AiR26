@@ -4,10 +4,9 @@ from math import nan
 
 
 class TimeStatistics:
-    def __init__(self, chargers: int, fleet_size: int | None, min_available: int):
+    def __init__(self, chargers: int, fleet_size: int | None):
         self.chargers = chargers
         self.fleet_size = fleet_size
-        self.min_available = min_available
         self.last_time = 0.0
         self.queue_area = 0.0
         self.system_area = 0.0
@@ -15,7 +14,6 @@ class TimeStatistics:
         self.empty_queue_time = 0.0
         self.occupancy_times = [0.0] * (chargers + 1)
         self.available_area = 0.0
-        self.shortage_time = 0.0
         self.arrivals = 0
         self.service_starts = 0
         self.completions = 0
@@ -37,8 +35,6 @@ class TimeStatistics:
         if self.fleet_size is not None:
             available = self.fleet_size - queue_length - busy
             self.available_area += available * elapsed
-            if available < self.min_available:
-                self.shortage_time += elapsed
         self.last_time = time
 
     def record_start(self, wait_time: float) -> None:
@@ -76,12 +72,10 @@ class TimeStatistics:
             "unfinished_visits": queue_length + busy,
             "mean_available_robots": nan,
             "availability": nan,
-            "shortage_probability": nan,
         }
         for count, total in enumerate(self.occupancy_times):
             row[f"prob_busy_{count}"] = time_mean(total)
         if self.fleet_size is not None:
             row["mean_available_robots"] = time_mean(self.available_area)
             row["availability"] = row["mean_available_robots"] / self.fleet_size
-            row["shortage_probability"] = time_mean(self.shortage_time)
         return row

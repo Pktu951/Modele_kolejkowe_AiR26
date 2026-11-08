@@ -16,6 +16,15 @@ class AppTests(unittest.TestCase):
         self.assertFalse(app.exception)
         return app
 
+    def assert_simulation_only(self, app, expected_columns):
+        columns = list(app.dataframe[0].value.columns)
+        self.assertEqual(len(columns), expected_columns)
+        self.assertTrue(all(column.startswith("Symulacja · ") for column in columns))
+        text = " ".join(element.value.lower() for element in app.markdown)
+        for reference in ("teoria", "teoretycz", "analitycz", "stan ustalony", "erlanga"):
+            self.assertNotIn(reference, text)
+        self.assertEqual(len(app.latex), 0)
+
     def test_open_comparison_and_result_download(self):
         app = self.app()
         app.button("run_simulation").click().run(timeout=60)
@@ -23,6 +32,7 @@ class AppTests(unittest.TestCase):
         results = app.session_state["simulation_results"][1]
         self.assertEqual([r.config.arrival_distribution for r in results], ["poisson", "deterministic"])
         self.assertEqual(len(app.dataframe), 3)
+        self.assert_simulation_only(app, expected_columns=2)
         self.assertEqual(len(app.get("download_button")), 1)
         arrivals = [r.summary["arrivals"] for r in results]
         app.run(timeout=60)
@@ -39,7 +49,10 @@ class AppTests(unittest.TestCase):
         self.assertEqual(result.config.model, "closed")
         self.assertEqual(result.config.fleet_size, 12)
         self.assertTrue(0 <= result.summary["availability"] <= 1)
-        self.assertTrue(0 <= result.summary["shortage_probability"] <= 1)
+        self.assertNotIn("min_available", [widget.key for widget in app.number_input])
+        self.assertNotIn("shortage_probability", result.summary)
+        self.assertNotIn("Ryzyko niedoboru P(R < m)", app.dataframe[0].value.index)
+        self.assert_simulation_only(app, expected_columns=1)
         self.assertEqual(len(app.get("download_button")), 1)
 
     def test_open_grid_runs_both_distributions(self):
@@ -57,7 +70,6 @@ class AppTests(unittest.TestCase):
     def test_closed_grid_reports_invalid_cases(self):
         app = self.app()
         app.radio("model_choice").set_value("Zamknięty").run(timeout=60)
-        app.number_input("min_available").set_value(1)
         app.text_input("grid_chargers").set_value("1,3")
         app.text_input("grid_fleets").set_value("2,4")
         app.number_input("repetitions").set_value(2)

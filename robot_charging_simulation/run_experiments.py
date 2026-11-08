@@ -21,7 +21,6 @@ def main():
     parser.add_argument("--duration-hours", type=float, default=168)
     parser.add_argument("--mean-charge-time", type=float, default=20, help="Minutes.")
     parser.add_argument("--mean-work-time", type=float, default=120, help="Minutes.")
-    parser.add_argument("--min-available", type=int, default=7)
     parser.add_argument("--repetitions", type=int, default=5)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output", type=Path, default=Path("results"))
@@ -31,7 +30,7 @@ def main():
         base = SimulationConfig(
             model=model, duration=args.duration_hours * 60,
             mean_charge_time=args.mean_charge_time, mean_work_time=args.mean_work_time,
-            min_available=args.min_available, seed=args.seed,
+            seed=args.seed,
         )
         scenarios, skipped = build_scenarios(
             base, parse_values(args.charger_counts, integer=True),

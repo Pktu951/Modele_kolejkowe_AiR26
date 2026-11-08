@@ -35,7 +35,6 @@ class ChargingSimulation:
         self.statistics = TimeStatistics(
             config.chargers,
             config.fleet_size if config.model == "closed" else None,
-            config.min_available,
         )
 
     def arrival_interval(self) -> float:

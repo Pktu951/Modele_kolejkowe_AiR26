@@ -6,7 +6,7 @@ Każdy przebieg trwał 168 godzin. Średni czas ładowania wynosił 20 minut. Ka
 
 Model otwarty: λ ∈ {2, 4, 6} zgłoszeń/h, c ∈ {1, 2, 3}, napływ Poissona i deterministyczny. To 18 wariantów i 90 przebiegów. Niektóre kombinacje mają λ/(cμ) ≥1. Ich wykresy pokazują wyniki skończonej obserwacji przeciążenia, a nie stabilny stan ustalony. Duże kolejki tych wariantów mogą dominować wspólną skalę wykresu. Aby dokładniej porównać stabilne przypadki, uruchom własną serię np. λ ∈ {2}, c ∈ {1, 2, 3}.
 
-Model zamknięty: N ∈ {10, 15, 20}, c ∈ {1, 2, 3}, średni czas pracy 120 minut, wymagane minimum m=7 dostępnych robotów. To 9 wariantów i 45 przebiegów. m jest stałą liczbą robotów, a nie procentem floty: przy różnych N dostępność A i ryzyko P(R<m) opisują różne aspekty działania.
+Model zamknięty: N ∈ {10, 15, 20}, c ∈ {1, 2, 3}, średni czas pracy 120 minut. To 9 wariantów i 45 przebiegów. Dostępność floty opisują średnia liczba pracujących robotów E[R] oraz ich udział A=E[R]/N.
 
 W każdym podkatalogu `open` i `closed` znajdują się:
 

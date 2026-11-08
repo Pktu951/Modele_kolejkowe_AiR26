@@ -69,10 +69,6 @@ def closed_theory(config: SimulationConfig) -> dict:
         "utilization": mean_busy / config.chargers,
         "mean_available_robots": config.fleet_size - mean_system,
         "availability": (config.fleet_size - mean_system) / config.fleet_size,
-        "shortage_probability": sum(
-            p for n, p in enumerate(probabilities)
-            if config.fleet_size - n < config.min_available
-        ),
         "throughput": throughput,
         "occupancy_probabilities": occupancy,
         "state_probabilities": probabilities,

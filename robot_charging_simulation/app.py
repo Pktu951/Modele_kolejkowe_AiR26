@@ -15,7 +15,6 @@ from exports import experiment_archive, result_archive
 from models import SimulationConfig
 from plots import experiment_chart, history_charts, result_label
 from simulation import SimulationLimitError, simulate
-from theory import theoretical_metrics
 
 
 def sidebar_controls() -> tuple[SimulationConfig, list[str], bool]:
@@ -28,7 +27,7 @@ def sidebar_controls() -> tuple[SimulationConfig, list[str], bool]:
         mean_charge = st.number_input("Średni czas ładowania 1/μ [min]", 0.01, 100_000.0, 20.0, key="mean_charge")
         distributions = ["poisson"]
         arrival_rate = 4.0
-        fleet_size, mean_work, min_available = 10, 120.0, 7
+        fleet_size, mean_work = 10, 120.0
         if model == "open":
             arrival_rate = st.number_input("Intensywność napływu λ [zgłoszenia/h]", 0.001, 100_000.0, 4.0, key="arrival_rate")
             distributions = st.multiselect(
@@ -40,18 +39,16 @@ def sidebar_controls() -> tuple[SimulationConfig, list[str], bool]:
         else:
             fleet_size = st.number_input("Liczba robotów N", 1, 5000, 10, key="fleet_size")
             mean_work = st.number_input("Średni czas pracy 1/α [min]", 0.01, 100_000.0, 120.0, key="mean_work")
-            min_available = st.number_input("Minimalna liczba dostępnych robotów m", 0, 5000, 7, key="min_available")
-            st.caption("Ta sama flota wielokrotnie pracuje, czeka i ładuje się. Wymagane c ≤ N oraz m ≤ N.")
+            st.caption("Ta sama flota wielokrotnie pracuje, czeka i ładuje się. Wymagane c ≤ N.")
         seed = st.number_input("Ziarno losowania", 0, 2**31 - 1, 42, key="seed")
         sample_count = st.slider("Liczba punktów na wykresach", 51, 1001, 301, step=50, key="sample_count")
-        st.caption("Wartości początkowe są demonstracyjne. Zmień je zgodnie z ustaleniami projektu.")
         submitted = st.button("Uruchom symulację", type="primary", key="run_simulation")
     # PL: Interfejs używa godzin dla czasu eksperymentu i napływu, a silnik minut.
     config = SimulationConfig(
         model=model, chargers=chargers, duration=duration_hours * 60,
         mean_charge_time=mean_charge, arrival_rate=arrival_rate / 60,
         arrival_distribution=distributions[0] if distributions else "poisson",
-        fleet_size=fleet_size, mean_work_time=mean_work, min_available=min_available,
+        fleet_size=fleet_size, mean_work_time=mean_work,
         seed=seed, sample_count=sample_count,
     )
     return config, distributions, submitted
@@ -62,15 +59,12 @@ def display_results(results):
     names = list(METRIC_LABELS) if results[0].config.model == "closed" else list(METRIC_LABELS)[:6]
     for result in results:
         columns[f"Symulacja · {result_label(result)}"] = [result.summary[name] for name in names]
-        benchmark = theoretical_metrics(result.config)
-        if benchmark is not None:
-            columns[f"Stan ustalony · {result_label(result)}"] = [benchmark.get(name) for name in names]
     st.subheader("Wyniki na końcu obserwacji")
     st.dataframe(
         pd.DataFrame(columns, index=[METRIC_LABELS[name] for name in names]).style.format("{:.4f}", na_rep="—"),
         width="stretch",
     )
-    st.caption("Wartości analityczne dotyczą stanu ustalonego. Symulacja zaczyna od pustej stacji i zawiera okres rozruchu.")
+    st.caption("Wyniki pochodzą z symulacji. Stacja na początku jest pusta, więc pomiary obejmują również okres rozruchu.")
     st.caption("„System” na wykresach oznacza kolejkę i ładowarki. Pracujące poza stacją roboty modelu zamkniętego nie są wliczane do K.")
     for result in results:
         row = result.summary
@@ -153,18 +147,17 @@ def experiments_tab(config, distributions):
         return
     _, raw, summary, scenarios, skipped = stored
     if skipped:
-        st.warning("Pominięto niepoprawne kombinacje (c > N lub m > N): " + "; ".join(skipped))
+        st.warning("Pominięto niepoprawne kombinacje (c > N): " + "; ".join(skipped))
     display_columns = ["chargers", "fleet_size" if config.model == "closed" else "arrival_rate_per_hour", "distribution", "repetitions"]
     if config.model == "open":
-        display_columns.append("offered_utilization")
         if summary["offered_utilization"].ge(1).any():
-            st.warning("Seria zawiera warianty przeciążone (u nominalne ≥ 1). Ich wyniki dotyczą wybranego czasu obserwacji, a nie stabilnego stanu ustalonego.")
+            st.warning("Seria zawiera warianty przeciążone. Kolejka może narastać; wyniki dotyczą wybranego czasu obserwacji.")
     metrics = list(METRIC_LABELS) if config.model == "closed" else list(METRIC_LABELS)[:6]
     display = summary[display_columns + metrics].copy()
     display["distribution"] = display["distribution"].map({**DISTRIBUTION_LABELS, "closed": "Zamknięty"})
     st.dataframe(display.rename(columns={
         "chargers": "Ładowarki c", "fleet_size": "Roboty N", "arrival_rate_per_hour": "Napływ λ [/h]",
-        "distribution": "Napływ", "repetitions": "Powtórzenia", "offered_utilization": "u nominalne", **METRIC_LABELS,
+        "distribution": "Napływ", "repetitions": "Powtórzenia", **METRIC_LABELS,
     }), width="stretch", hide_index=True)
     st.caption("Punkty to średnie z powtórzeń, a słupki błędu pokazują ± jedno odchylenie standardowe. To nie są przedziały ufności.")
     if repetitions == 1:
@@ -187,23 +180,21 @@ def model_notes():
         "c identycznych ładowarek, wspólna kolejka FIFO. Po obsłudze robot opuszcza stację.\n\n"
         "**Drugi napływ: deterministyczny D, model D/M/c/FIFO/∞/O.** Odstęp wynosi zawsze "
         "1/λ. Ma tę samą średnią intensywność co wariant Poissona; zmieniamy jedynie losowość napływu. "
-        "Czasy ładowania nadal są wykładnicze. Wzorów Erlanga C nie stosujemy do tego wariantu.\n\n"
+        "Czasy ładowania nadal są wykładnicze.\n\n"
         "**Model zamknięty M/M/c/FIFO/N/F:** N robotów pracuje i wraca do ładowania. "
         "Średni czas pracy to 1/α, a średni czas ładowania to 1/μ. Roboty w kolejce lub przy ładowarkach "
-        "są niedostępne do pracy. Dla n robotów przy stacji intensywności wynoszą:"
+        "są niedostępne do pracy."
     )
-    st.latex(r"\lambda_n=(N-n)\alpha,\qquad \mu_n=\min(n,c)\mu")
     st.markdown(
-        "**Dostępność:** R=N−n to liczba pracujących robotów, E[R] jej średnia, "
-        "A=E[R]/N to średni udział dostępnej floty. Ryzyko oznacza P(R<m).\n\n"
+        "**Dostępność:** n oznacza liczbę robotów czekających lub ładowanych. "
+        "R=N−n to liczba pracujących robotów, E[R] jej średnia, "
+        "A=E[R]/N to średni udział dostępnej floty.\n\n"
         "**Pomiar:** długości i prawdopodobieństwa są ważone czasem; wykresy przedstawiają "
         "oszacowania narastające od chwili 0. Zwiększenie liczby punktów wykresu nie zmienia przebiegu. "
         "W chwili 0 średnie czasowe są nieokreślone.\n\n"
         "**Początek i koniec:** stacja jest początkowo pusta; w modelu zamkniętym wszystkie roboty pracują. "
         "Zatrzymujemy się dokładnie po zadanym czasie, pozostawiając niezakończone zgłoszenia. "
-        "Czasy dojazdu, awarie, pojemność baterii i ograniczenia wspólnej mocy nie są modelowane.\n\n"
-        "**Oznaczenia obciążenia:** wykorzystanie u=λ/(cμ) odpowiada ρ z propozycji. "
-        "Na wykładzie ρ=λ/μ, więc u=ρ/c. W otwartym modelu stan ustalony wymaga u<1."
+        "Czasy dojazdu, awarie, pojemność baterii i ograniczenia wspólnej mocy nie są modelowane."
     )
 
 
@@ -217,8 +208,6 @@ def main():
     except ValueError as error:
         if config.model == "closed" and config.chargers > config.fleet_size:
             st.error("Liczba ładowarek c nie może przekraczać liczby robotów N.")
-        elif config.model == "closed" and config.min_available > config.fleet_size:
-            st.error("Minimalna wymagana liczba dostępnych robotów m nie może przekraczać N.")
         else:
             st.error(f"Niepoprawne parametry: {error}")
         return
@@ -226,7 +215,7 @@ def main():
         st.info("Wybierz co najmniej jeden rodzaj napływu.")
         return
     if config.model == "open" and config.arrival_rate * config.mean_charge_time >= config.chargers:
-        st.warning("Napływ osiąga lub przekracza wydajność stacji (u ≥ 1). Można zbadać skończony przebieg, ale nie ma stabilnego stanu ustalonego ani porównania z Erlangiem C.")
+        st.warning("Napływ osiąga lub przekracza wydajność stacji (u ≥ 1). Kolejka może narastać; wyniki dotyczą wybranego czasu obserwacji.")
     signature = json.dumps([config.to_dict(), distributions], sort_keys=True)
     simulation_tab, batch_tab, notes_tab = st.tabs(["Symulacja i wykresy", "Eksperymenty", "Opis modeli i miar"])
     with simulation_tab:

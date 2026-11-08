@@ -52,7 +52,7 @@ class EventSimulationTests(unittest.TestCase):
 
     def test_closed_robot_returns_and_fleet_is_conserved(self):
         engine = ChargingSimulation(SimulationConfig(
-            model="closed", fleet_size=2, chargers=1, min_available=1,
+            model="closed", fleet_size=2, chargers=1,
             duration=5, sample_count=6,
         ))
         engine.work_duration = lambda: 1.0
@@ -62,7 +62,7 @@ class EventSimulationTests(unittest.TestCase):
         self.assertAlmostEqual(result.summary["mean_queue_length"], 0.6)
         self.assertAlmostEqual(result.summary["mean_system_size"], 1.4)
         self.assertAlmostEqual(result.summary["availability"], 0.3)
-        self.assertAlmostEqual(result.summary["shortage_probability"], 0.6)
+        self.assertAlmostEqual(result.summary["mean_available_robots"], 0.6)
         for event in result.event_log:
             self.assertEqual(event["queue_length"] + event["busy_chargers"] + event["working_robots"], 2)
 
@@ -121,7 +121,7 @@ class EventSimulationTests(unittest.TestCase):
             {"chargers": 0}, {"duration": float("nan")}, {"mean_charge_time": 0},
             {"arrival_rate": -1}, {"sample_count": 1},
             {"model": "closed", "fleet_size": 1, "chargers": 2},
-            {"model": "closed", "min_available": 11},
+            {"model": "closed", "fleet_size": 0},
         ):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 replace(SimulationConfig(), **changes).validate()
@@ -138,14 +138,14 @@ class TheoryTests(unittest.TestCase):
             self.assertAlmostEqual(result[name], expected)
 
     def test_closed_no_queue_binomial_case(self):
-        config = SimulationConfig(model="closed", fleet_size=4, chargers=4, min_available=3, mean_work_time=6, mean_charge_time=2)
+        config = SimulationConfig(model="closed", fleet_size=4, chargers=4, mean_work_time=6, mean_charge_time=2)
         result = theoretical_metrics(config)
         self.assertAlmostEqual(result["mean_system_size"], 1)
         self.assertEqual(result["mean_queue_length"], 0)
         self.assertEqual(result["mean_wait_time"], 0)
         self.assertAlmostEqual(result["mean_system_time"], 2)
         self.assertAlmostEqual(result["availability"], 0.75)
-        self.assertAlmostEqual(result["shortage_probability"], 1 - 0.75**4 - 4 * 0.25 * 0.75**3)
+        self.assertAlmostEqual(result["mean_available_robots"], 3)
 
     def test_closed_probability_balance_and_throughput(self):
         config = SimulationConfig(model="closed", fleet_size=50, chargers=3)

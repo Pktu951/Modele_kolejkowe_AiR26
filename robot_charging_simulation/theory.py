@@ -1,4 +1,4 @@
-"""M/M/c benchmarks, including a reserved legacy closed exponential model."""
+"""Reserved legacy benchmarks for open and closed exponential-service models."""
 
 from math import exp, lgamma, log
 
@@ -14,7 +14,7 @@ def _normalize(log_weights: list[float]) -> list[float]:
 
 
 def open_theory(config: SimulationConfig) -> dict | None:
-    """Erlang C applies only to a stable Poisson/exponential open station."""
+    """Retain Erlang C for the legacy open model with exponential service."""
     if config.arrival_distribution != "poisson":
         return None
     offered_load = config.arrival_rate * config.mean_charge_time
@@ -79,6 +79,7 @@ def closed_theory(config: SimulationConfig) -> dict | None:
 
 
 def theoretical_metrics(config: SimulationConfig) -> dict | None:
+    """Avoid applying exponential-service formulas to current fixed-service models."""
     config.validate()
-    # PL: Aktualne zamknięte modele mają stałą obsługę; stary wzór M/M/c tu nie pasuje.
-    return None if config.model == "closed" else open_theory(config)
+    # PL: Wszystkie aktualne modele mają stałą obsługę; dawne wzory tu nie pasują.
+    return None

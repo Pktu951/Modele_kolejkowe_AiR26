@@ -21,7 +21,7 @@ def main():
     parser.add_argument("--duration-hours", type=float, default=168)
     parser.add_argument(
         "--mean-charge-time", "--charge-time", dest="mean_charge_time", type=float, default=20,
-        help="Minutes: exponential mean for open models; fixed duration for shared closed service.",
+        help="Exact fixed charging duration in minutes for identical chargers in either model.",
     )
     parser.add_argument("--charger-times", help="Fixed times in minutes, in charger order; required for closed-individual.")
     parser.add_argument("--mean-work-time", type=float, default=120, help="Minutes.")

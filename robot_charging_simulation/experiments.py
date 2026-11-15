@@ -22,8 +22,8 @@ METRIC_LABELS = {
     "availability": "Dostępność floty A",
 }
 DISTRIBUTION_LABELS = {
-    "poisson": "Poisson (M/M/c)",
-    "deterministic": "Deterministyczny (D/M/c)",
+    "poisson": "Poisson (M/D/c)",
+    "deterministic": "Deterministyczny (D/D/c)",
 }
 SERVICE_LABELS = {
     "shared_exponential": "Jednakowe ładowarki · czasy wykładnicze",
@@ -116,8 +116,8 @@ def run_experiments(
     total = len(scenarios) * repetitions
     for scenario_id, scenario in enumerate(scenarios):
         for repetition in range(repetitions):
-            # PL: Ziarno zmienia się między powtórzeniami. Te same ziarna dla
-            # PL: wariantów pozwalają porównywać napływy przy tych samych ładowaniach.
+            # PL: Ziarno zmienia się między powtórzeniami dla losowego napływu lub pracy.
+            # PL: W D/D/c nie losujemy niczego, więc powtórzenia mają identyczny przebieg.
             config = replace(scenario, seed=scenario.seed + repetition, sample_count=2)
             result = simulate(config)
             row = dict(result.summary)
@@ -131,8 +131,8 @@ def run_experiments(
                 "fleet_size": config.fleet_size if config.model == "closed" else None,
                 "arrival_rate_per_hour": config.arrival_rate * 60 if config.model == "open" else None,
                 "duration": config.duration,
-                "mean_charge_time": config.mean_charge_time if config.model == "open" else None,
-                "fixed_charge_time": config.mean_charge_time if config.model == "closed" and not config.individual_service else None,
+                "mean_charge_time": None,
+                "fixed_charge_time": config.mean_charge_time if not config.individual_service else None,
                 "service_type": config.service_type,
                 "charger_times": json.dumps(config.charger_times) if config.individual_service else None,
                 "mean_work_time": config.mean_work_time if config.model == "closed" else None,

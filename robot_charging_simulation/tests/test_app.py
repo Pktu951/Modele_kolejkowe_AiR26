@@ -43,10 +43,19 @@ class AppTests(unittest.TestCase):
 
     def test_open_comparison_and_result_download(self):
         app = self.app()
+        self.assertEqual(app.number_input("mean_charge").label, "Czas ładowania 1/μ [min]")
+        app.number_input("mean_charge").set_value(15.0)
         app.button("run_simulation").click().run(timeout=60)
         self.assertFalse(app.exception)
         results = app.session_state["simulation_results"][1]
         self.assertEqual([r.config.arrival_distribution for r in results], ["poisson", "deterministic"])
+        self.assertEqual([column for column in app.dataframe[0].value.columns], [
+            "Symulacja · Poisson (M/D/c)", "Symulacja · Deterministyczny (D/D/c)",
+        ])
+        for result in results:
+            for visit in result.visits:
+                if visit.departed_at is not None:
+                    self.assertAlmostEqual(visit.departed_at - visit.started_at, 15.0)
         self.assertEqual(len(app.dataframe), 3)
         self.assert_simulation_only(app, expected_columns=2)
         self.assertEqual(len(app.table), 0)
@@ -56,12 +65,33 @@ class AppTests(unittest.TestCase):
         app.run(timeout=60)
         self.assertEqual([r.summary["arrivals"] for r in app.session_state["simulation_results"][1]], arrivals)
 
+    def test_ddc_at_capacity_has_no_overload_warning_in_run_or_grid(self):
+        app = self.app()
+        app.multiselect("distributions").set_value(["deterministic"])
+        app.number_input("arrival_rate").set_value(6.0)
+        app.number_input("duration_hours").set_value(1.0)
+        app.button("run_simulation").click().run(timeout=60)
+        self.assertFalse(app.exception)
+        self.assertFalse(app.warning)
+        self.assertEqual(app.session_state["simulation_results"][1][0].summary["mean_wait_time"], 0)
+        app.text_input("grid_chargers").set_value("2")
+        app.text_input("grid_rates").set_value("6")
+        app.number_input("repetitions").set_value(2)
+        app.button("run_experiments").click().run(timeout=60)
+        self.assertFalse(app.exception)
+        self.assertFalse(app.warning)
+        app.multiselect("distributions").set_value(["poisson"]).run(timeout=60)
+        self.assertTrue(app.warning)
+        app.multiselect("distributions").set_value(["deterministic"])
+        app.number_input("arrival_rate").set_value(7.0).run(timeout=60)
+        self.assertTrue(app.warning)
+
     def test_closed_model_and_fleet_settings(self):
         app = self.app()
         app.radio("model_choice").set_value("Zamknięty").run(timeout=60)
         app.number_input("fleet_size").set_value(12)
         app.number_input("chargers").set_value(3)
-        self.assertEqual(app.number_input("mean_charge").label, "Stały czas ładowania 1/μ [min]")
+        self.assertEqual(app.number_input("mean_charge").label, "Czas ładowania 1/μ [min]")
         app.number_input("mean_charge").set_value(15.0)
         app.button("run_simulation").click().run(timeout=60)
         self.assertFalse(app.exception)

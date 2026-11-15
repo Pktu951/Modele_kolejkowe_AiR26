@@ -137,7 +137,7 @@ def instantaneous_chart(result: SimulationResult):
         )
     _format_axis(axis, f"Chwilowa liczba robotów · {result_label(result)}", "Liczba robotów")
     axis.yaxis.set_major_locator(MaxNLocator(integer=True))
-    axis.set_ylim(0, max(1, frame[["queue_length", "busy_chargers"]].to_numpy().max()) + 0.3)
+    axis.set_ylim(-0.1, max(1, frame[["queue_length", "busy_chargers"]].to_numpy().max()) + 0.3)
     axis.set_xlim(0, result.config.duration)
     figure.legend(*axis.get_legend_handles_labels(), loc="outside lower center", fontsize=10, ncol=2)
     return figure

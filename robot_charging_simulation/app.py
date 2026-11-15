@@ -40,7 +40,7 @@ def sidebar_controls() -> tuple[SimulationConfig, list[str], bool]:
         charger_times = None
         if individual_service:
             with st.expander("Indywidualne czasy ładowania", expanded=True):
-                st.caption("Stały czas każdej obsługi. Robot wybiera najszybszą wolną ładowarkę; wspólna kolejka FIFO.")
+                st.caption("Stały czas każdej obsługi. Robot wybiera pierwszą wolną ładowarkę; wspólna kolejka FIFO.")
                 charger_times = tuple(
                     st.number_input(
                         f"Czas ładowania — ładowarka {index + 1} [min]",
@@ -49,8 +49,7 @@ def sidebar_controls() -> tuple[SimulationConfig, list[str], bool]:
                     for index in range(chargers)
                 )
         else:
-            charge_label = "Stały czas ładowania 1/μ [min]" if model == "closed" else "Średni czas ładowania 1/μ [min]"
-            mean_charge = st.number_input(charge_label, 0.01, 100_000.0, 20.0, key="mean_charge")
+            mean_charge = st.number_input("Czas ładowania 1/μ [min]", 0.01, 100_000.0, 20.0, key="mean_charge")
         distributions = ["poisson"]
         arrival_rate = 4.0
         fleet_size, mean_work = 10, 120.0
@@ -244,10 +243,8 @@ def experiments_tab(config, distributions):
         repetitions = st.number_input("Liczba powtórzeń każdego wariantu", 1, 30, 5, key="repetitions")
         if config.individual_service:
             st.caption(f"Czas każdego przebiegu: {config.duration / 60:g} h; stałe czasy ładowania z listy powyżej.")
-        elif config.model == "closed":
-            st.caption(f"Czas każdego przebiegu: {config.duration / 60:g} h; stałe ładowanie: {config.mean_charge_time:g} min.")
         else:
-            st.caption(f"Czas każdego przebiegu: {config.duration / 60:g} h; średnie ładowanie: {config.mean_charge_time:g} min.")
+            st.caption(f"Czas każdego przebiegu: {config.duration / 60:g} h; stałe ładowanie: {config.mean_charge_time:g} min.")
         submitted = st.form_submit_button("Uruchom eksperymenty", key="run_experiments")
     signature = json.dumps([config.to_dict(), distributions, charger_text, size_text, repetitions, charger_times_text], sort_keys=True)
     if submitted:
@@ -288,8 +285,12 @@ def experiments_tab(config, distributions):
     if config.individual_service:
         display_columns += ["service_type", "charger_times"]
     if config.model == "open":
-        if summary["offered_utilization"].ge(1).any():
-            st.warning("Seria zawiera warianty przeciążone. Kolejka może narastać; wyniki dotyczą wybranego czasu obserwacji.")
+        # PL: Przy u=1 D/D/c od pustej stacji nie tworzy kolejki; M/D/c może ją tworzyć.
+        growing_queue = summary["offered_utilization"].gt(1) | (
+            summary["offered_utilization"].ge(1) & summary["distribution"].eq("poisson")
+        )
+        if growing_queue.any():
+            st.warning("Seria zawiera warianty, w których kolejka może narastać. Wyniki dotyczą wybranego czasu obserwacji.")
     metrics = list(METRIC_LABELS) if config.model == "closed" else list(METRIC_LABELS)[:6]
     display = summary[display_columns + metrics].copy()
     if config.individual_service:
@@ -318,11 +319,11 @@ def experiments_tab(config, distributions):
 def model_notes():
     st.subheader("Co jest symulowane")
     st.markdown(
-        "**Model otwarty M/M/c/FIFO/∞/O:** napływ Poissona, wykładnicze czasy ładowania, "
+        "**Model otwarty M/D/c/FIFO/∞/O:** napływ Poissona, stały czas każdego ładowania 1/μ, "
         "c identycznych ładowarek, wspólna kolejka FIFO. Po obsłudze robot opuszcza stację.\n\n"
-        "**Drugi napływ: deterministyczny D, model D/M/c/FIFO/∞/O.** Odstęp wynosi zawsze "
+        "**Drugi napływ: deterministyczny D, model D/D/c/FIFO/∞/O.** Odstęp wynosi zawsze "
         "1/λ. Ma tę samą średnią intensywność co wariant Poissona; zmieniamy jedynie losowość napływu. "
-        "Czasy ładowania nadal są wykładnicze.\n\n"
+        "Każde ładowanie trwa ten sam stały czas 1/μ.\n\n"
         "**Model zamknięty z jednakowymi ładowarkami, M/D/c/FIFO/N/F:** N robotów pracuje i wraca do ładowania. "
         "Czas pracy jest wykładniczy o średniej 1/α, a każde ładowanie trwa stały czas 1/μ. Roboty w kolejce lub przy ładowarkach "
         "są niedostępne do pracy.\n\n"
@@ -363,7 +364,8 @@ def main():
     if config.model == "open" and not distributions:
         st.info("Wybierz co najmniej jeden rodzaj napływu.")
         return
-    if config.model == "open" and config.arrival_rate * config.mean_charge_time >= config.chargers:
+    load = config.arrival_rate * config.mean_charge_time / config.chargers
+    if config.model == "open" and (load > 1 or (load >= 1 and "poisson" in distributions)):
         st.warning("Napływ osiąga lub przekracza wydajność stacji (u ≥ 1). Kolejka może narastać; wyniki dotyczą wybranego czasu obserwacji.")
     signature = json.dumps([config.to_dict(), distributions], sort_keys=True)
     simulation_tab, batch_tab, notes_tab = st.tabs(["Symulacja i wykresy", "Eksperymenty", "Opis modeli i miar"])

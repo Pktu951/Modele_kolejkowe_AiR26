@@ -9,7 +9,7 @@ class SimulationConfig:
     model: str = "open"
     chargers: int = 2
     duration: float = 1440.0
-    # PL: E[S] to średnia dla otwartego modelu i dokładny czas dla zamkniętego.
+    # PL: Zachowana nazwa pola; w obu modelach to dokładny, stały czas ładowania.
     mean_charge_time: float = 20.0
     charger_times: tuple[float, ...] | None = None
     arrival_rate: float = 4.0 / 60.0
@@ -33,7 +33,7 @@ class SimulationConfig:
     def service_type(self) -> str:
         if self.individual_service:
             return "individual_deterministic"
-        return "shared_deterministic" if self.model == "closed" else "shared_exponential"
+        return "shared_deterministic"
 
     @property
     def variant_key(self) -> str:

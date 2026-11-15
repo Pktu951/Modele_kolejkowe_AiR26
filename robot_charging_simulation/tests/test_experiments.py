@@ -27,6 +27,10 @@ class ExperimentTests(unittest.TestCase):
         self.assertTrue(summary["repetitions"].eq(2).all())
         self.assertTrue(summary["mean_system_size_std"].notna().all())
         self.assertEqual(raw["seed"].tolist(), [42, 43] * 8)
+        for frame in (raw, summary):
+            self.assertTrue(frame["service_type"].eq("shared_deterministic").all())
+            self.assertTrue(frame["fixed_charge_time"].eq(20.0).all())
+            self.assertTrue(frame["mean_charge_time"].isna().all())
 
     def test_invalid_closed_combinations_are_reported(self):
         configs, skipped = build_scenarios(SimulationConfig(model="closed"), [1, 3], fleet_sizes=[2, 4])
@@ -49,6 +53,8 @@ class ExperimentTests(unittest.TestCase):
             self.assertIn("poisson/history.csv", archive.namelist())
             self.assertIn("poisson/visits.csv", archive.namelist())
             self.assertIn("poisson/first_500_events.csv", archive.namelist())
+            restored = SimulationConfig(**json.loads(archive.read("poisson/config.json")))
+            self.assertEqual(simulate(restored).visits, result.visits)
 
     def test_closed_exports_keep_availability_without_threshold(self):
         config = SimulationConfig(model="closed", fleet_size=2, chargers=1, duration=100)

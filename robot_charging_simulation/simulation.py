@@ -18,8 +18,8 @@ class ChargingSimulation:
     def __init__(self, config: SimulationConfig):
         config.validate()
         self.config = config
-        # PL: Oddzielne generatory oddzielają losowanie napływu, ładowania i pracy.
-        # PL: Dla tego samego ziarna porównanie napływów używa tych samych ładowań.
+        # PL: Zachowujemy strumienie generatorów, aby seed nie zmieniał napływu ani pracy.
+        # PL: Dawny charge_rng pozostaje nieużywany, bo ładowanie ma teraz stały czas.
         seeds = Random(config.seed)
         self.arrival_rng = Random(seeds.getrandbits(64))
         self.charge_rng = Random(seeds.getrandbits(64))
@@ -46,10 +46,9 @@ class ChargingSimulation:
         return 1.0 / self.config.arrival_rate
 
     def charge_duration(self) -> float:
-        # PL: W zamkniętym modelu wszystkie ładowarki mają ten sam stały czas obsługi.
-        if self.config.model == "closed":
-            return self.config.mean_charge_time
-        return self.charge_rng.expovariate(1.0 / self.config.mean_charge_time)
+        """Return the exact common charging duration for identical chargers."""
+        # PL: W obu modelach wpisany czas dotyczy każdego ładowania, bez losowania.
+        return self.config.mean_charge_time
 
     def select_free_charger(self) -> int:
         """Choose the fastest idle charger for individual service; ties use its ID."""

@@ -11,17 +11,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from models import SimulationConfig
 from simulation import ChargingSimulation, SimulationLimitError, simulate
-from theory import closed_theory, theoretical_metrics
+from theory import closed_theory, open_theory, theoretical_metrics
 
 
 class EventSimulationTests(unittest.TestCase):
     def test_fifo_time_integrals_and_horizon_ties(self):
         config = SimulationConfig(
-            chargers=1, duration=5.0, arrival_rate=1.0,
+            chargers=1, duration=5.0, arrival_rate=1.0, mean_charge_time=2.0,
             arrival_distribution="deterministic", sample_count=6,
         )
         engine = ChargingSimulation(config)
-        engine.charge_duration = lambda: 2.0
         result = engine.run()
         row = result.summary
         # PL: Pola pod schodkami: kolejka 4, system 8, zajęta ładowarka 4.
@@ -132,19 +131,32 @@ class EventSimulationTests(unittest.TestCase):
         self.assertAlmostEqual(mean, 4.0, delta=0.12)
         self.assertAlmostEqual(variance, 16.0, delta=1.0)
 
-    def test_comparison_preserves_service_draws(self):
-        config = SimulationConfig(duration=5000)
-        poisson = simulate(config)
-        fixed = simulate(replace(config, arrival_distribution="deterministic"))
-        compared = 0
-        for first, second in zip(poisson.visits, fixed.visits):
-            if first.departed_at is not None and second.departed_at is not None:
-                self.assertAlmostEqual(
-                    first.departed_at - first.started_at,
-                    second.departed_at - second.started_at, places=9,
-                )
-                compared += 1
-        self.assertGreater(compared, 100)
+    def test_open_service_is_fixed_for_both_arrival_distributions(self):
+        for distribution in ("poisson", "deterministic"):
+            with self.subTest(distribution=distribution):
+                config = SimulationConfig(duration=5000, mean_charge_time=17.5, arrival_distribution=distribution)
+                engine = ChargingSimulation(config)
+                with patch.object(engine.charge_rng, "expovariate", side_effect=AssertionError("Open charging must not draw a random time")):
+                    result = engine.run()
+                completed = [visit for visit in result.visits if visit.departed_at is not None]
+                self.assertGreater(len(completed), 100)
+                for visit in completed:
+                    self.assertAlmostEqual(visit.departed_at - visit.started_at, 17.5)
+                slower = simulate(replace(config, mean_charge_time=40.0))
+                self.assertEqual([v.arrived_at for v in result.visits], [v.arrived_at for v in slower.visits])
+                self.assertEqual(config.service_type, "shared_deterministic")
+
+    def test_ddc_at_capacity_from_empty_has_no_waiting(self):
+        result = simulate(SimulationConfig(
+            chargers=2, duration=10, arrival_rate=1,
+            arrival_distribution="deterministic", mean_charge_time=2,
+        ))
+        self.assertEqual(result.summary["arrivals"], 10)
+        self.assertEqual(result.summary["completions"], 8)
+        self.assertEqual(result.summary["mean_queue_length"], 0)
+        self.assertEqual(result.summary["mean_wait_time"], 0)
+        self.assertEqual(result.summary["queue_empty_probability"], 1)
+        self.assertAlmostEqual(result.summary["utilization"], 17 / 20)
 
     def test_event_limit_is_explicit(self):
         with self.assertRaises(SimulationLimitError):
@@ -223,8 +235,8 @@ class EventSimulationTests(unittest.TestCase):
 
 
 class TheoryTests(unittest.TestCase):
-    def test_known_mm1_solution(self):
-        result = theoretical_metrics(SimulationConfig(chargers=1, arrival_rate=0.5, mean_charge_time=1))
+    def test_legacy_exponential_open_known_mm1_solution(self):
+        result = open_theory(SimulationConfig(chargers=1, arrival_rate=0.5, mean_charge_time=1))
         for name, expected in {
             "mean_queue_length": 0.5, "mean_system_size": 1,
             "mean_wait_time": 1, "mean_system_time": 2,
@@ -255,20 +267,28 @@ class TheoryTests(unittest.TestCase):
         self.assertAlmostEqual(result["throughput"], result["mean_available_robots"] / config.mean_work_time)
 
     def test_unavailable_benchmarks_are_not_fabricated(self):
+        self.assertIsNone(theoretical_metrics(SimulationConfig()))
         self.assertIsNone(theoretical_metrics(SimulationConfig(arrival_distribution="deterministic")))
         self.assertIsNone(theoretical_metrics(SimulationConfig(arrival_rate=1, chargers=1, mean_charge_time=2)))
         self.assertIsNone(theoretical_metrics(SimulationConfig(model="closed")))
         self.assertIsNone(theoretical_metrics(SimulationConfig(model="closed", charger_times=(10.0, 30.0))))
 
-    def test_open_long_run_approaches_stationary_values(self):
-        config = SimulationConfig(duration=600_000, seed=1234, sample_count=2)
+    def test_md1_long_run_matches_pollaczek_khinchine_means(self):
+        config = SimulationConfig(
+            chargers=1, arrival_rate=0.5, mean_charge_time=1,
+            duration=200_000, seed=1234, sample_count=2,
+        )
         observed = simulate(config).summary
-        expected = theoretical_metrics(config)
+        # PL: Niezależny wzór tylko dla jednej ładowarki: W = lambda*d^2 / (2*(1-rho)).
+        # Source: https://www.netlab.tkk.fi/opetus/s383143/kalvot/E_mg1jono.pdf, p. 6.
+        expected = {
+            "mean_queue_length": 0.25, "mean_system_size": 0.75,
+            "mean_wait_time": 0.5, "mean_system_time": 1.5,
+        }
         for name in ("mean_queue_length", "mean_system_size", "mean_wait_time", "mean_system_time"):
             with self.subTest(metric=name):
                 self.assertAlmostEqual(observed[name], expected[name], delta=0.07 * expected[name])
-        for name in ("queue_empty_probability", "utilization"):
-            self.assertAlmostEqual(observed[name], expected[name], delta=0.025)
+        self.assertAlmostEqual(observed["utilization"], 0.5, delta=0.025)
 
 
 if __name__ == "__main__":

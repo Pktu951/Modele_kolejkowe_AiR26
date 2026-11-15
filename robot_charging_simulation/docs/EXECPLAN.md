@@ -1,0 +1,116 @@
+# Build and verify the robot charging simulator
+
+This is a living execution plan maintained according to the execution-plan skill. The Progress, Surprises and Discoveries, Decision Log, and Outcomes and Retrospective sections record the actual state of implementation.
+
+## Purpose and context
+
+The user needs a new, independently runnable project inside modele_kolejkowe. Its starting specification is ../propozycja1.docx: an open station with external Poisson arrivals, a closed fleet that alternates work and charging, FIFO waiting, identical chargers, exponential charging and working times, and availability E[R]/N. The user's later instructions remove the minimum-available threshold and shortage metric from the project. The existing repository-root app.py and plots.py illustrate a Python Streamlit interface and Matplotlib plots. Do not change those files or the source DOCX.
+
+After implementation, a user can start Streamlit, type the model parameters, run the chosen model, compare Poisson arrivals with deterministic arrivals of the same mean rate, view running measurements over virtual time, and download CSV and PNG data. A second tab runs parameter grids with repeated seeds. A terminal command produces the same experiment reports without a browser.
+
+As of 2026-11-08, the user requests simulation-only presentation. Do not show theoretical curves, table columns, or analytical explanations in the app. Keep theory.py and its tests available for a possible future comparison; neither app.py nor plots.py imports or calls that module.
+
+The 2026-11-09 extension adds a selectable closed-system variant with an individual fixed charging duration for every charger. The user confirmed deterministic service durations, a shared FIFO queue, selection of the fastest idle charger, and the first-c-prefix rule for experiment charger subsets. Keep the existing open and homogeneous closed models. Continue to hide theory, system-time curves, and shortage metrics.
+
+## Progress
+
+- [x] 2026-11-07 Read the current proposal, the reference app, and repository instructions; no AGENTS.md applies.
+- [x] 2026-11-07 Confirm fixed observation duration and cumulative time-weighted occupancy probabilities with the user.
+- [x] 2026-11-07 Create isolated project and install its dependencies in .venv.
+- [x] 2026-11-07 Implement models.py, metrics.py, simulation.py, theory.py, experiments.py, plots.py, exports.py, app.py, and run_experiments.py.
+- [x] 2026-11-07 Verify exact event timing, FIFO, finite-population conservation, time weighting, sampling independence, probability normalization, and long-run agreement with theory.
+- [x] 2026-11-07 Exercise both interface modes, downloads, parameter grids, and validation with Streamlit AppTest; the full suite passed 25 tests in 8.530 seconds.
+- [x] 2026-11-07 Run 135 demonstration replications, inspect all requested chart types and the large-occupancy heatmap, finish README, verify dependencies, and exercise the actual localhost UI.
+- [x] 2026-11-08 Disconnect theory from charts and result tables, remove analytical explanations from the UI, and document the reserved theory module without changing its implementation.
+- [x] 2026-11-08 Pass all 27 tests, including new assertions against theoretical result columns and curves, verify the live simulation-only view, and replace the app preview.
+- [x] 2026-11-08 Remove the minimum-available threshold and shortage metric from configuration, statistics, reserved theory, UI, CLI, charts, and exported data. Pass all 28 tests and regenerate all 135 demonstration replications.
+- [x] 2026-11-09 Inspect the current engine, UI, experiment/export paths, and tests; ask about individual time semantics, charger selection, and experiment subsets.
+- [x] 2026-11-09 Record the user's answers and implement validated per-charger service parameters and the selected dispatch rule.
+- [x] 2026-11-09 Add the selectable UI variant, consistent experiment/CLI/export support, descriptions, and labels.
+- [x] 2026-11-09 Verify event timing, FIFO, fleet conservation, parameter validation, reproducibility, UI, plots, and exports for the new variant; pass all 37 tests, inspect the chart PNGs, and restart the local app on port 8502.
+
+## Decision Log
+
+The 2026-11-09 request concerns a new closed variant, rather than replacing the existing model. The user selected fixed per-charger service durations (not random means), one shared FIFO queue, and the fastest idle charger. Ties in speed use the lower charger ID. At simultaneous service completions, release every completing charger before assigning the oldest waiting visits. Work durations remain independent exponential draws, as in the original closed model. The source DOCX and the unrelated Word lock file must remain untouched. No new libraries are needed.
+
+SimulationConfig in modele_kolejkowe/robot_charging_simulation/models.py uses model="closed" and an optional charger_times tuple containing exactly c positive, finite durations in charger-ID order. Absence of the tuple retains shared exponential service; its presence selects individual deterministic service. The to_dict export omits the unused common mean for this variant, and JSON lists are normalized to tuples on input. The variant_key is closed_individual. ChargingSimulation in simulation.py uses the selected charger's fixed duration and batches equal-time completions before dispatching FIFO. The reserved closed_theory returns None for individual service because its exponential identical-charger assumptions do not apply.
+
+The user also confirmed that an experiment with c chargers uses the first c times from the supplied ordered pool. experiments.build_scenarios accepts an optional charger_times pool, takes prefixes without sorting or deduplicating, and rejects missing durations instead of inventing them. The new parse_charger_times preserves repeated entries, unlike parse_values for grids. CSV metadata records service_type and charger_times; the unused mean_charge_time is empty. Exports use the closed_individual directory to avoid confusing the new variant with the original closed model.
+
+On 2026-11-08 the user explicitly requested no theory in the current presentation. The UI and chart builders now consume simulation histories only, including PNGs exported through the same builders. Keep theory.py and its numerical validation tests reserved for future use. A subsequent request removes the minimum-available threshold and shortage metric, including their calculation in the reserved theory module; all other analytical calculations remain. Do not add a theory toggle or analytical output until the user requests it. The comparison of the two simulated arrival distributions remains enabled. Model descriptions still explain parameters and measured quantities, without analytical reference formulas or results.
+
+The user confirmed on 2026-11-07 that the open model runs for a chosen duration; its arrival count is generated by the rate, rather than supplied as a finite population. Population grids therefore apply to the closed model, and rate grids to the open model. Occupancy means the distribution of the number of busy chargers, not individual charger identities.
+
+Use a heap calendar: a heap retrieves the earliest pending event. At tied times, completions precede arrivals, which precede chart samples. Between events, integrate the unchanged queue and system counts times the elapsed duration. This provides running time means and probabilities that do not depend on the number of chart samples. No real-time sleeps are involved.
+
+For the second arrival model use deterministic equal gaps 1/lambda, labeled D/M/c, with the same mean arrival rate and the same service distribution as M/M/c. Separate pseudorandom streams preserve identical charging draws across the two open variants for a given seed.
+
+All times in the engine are minutes. The UI accepts hours for horizon and arrivals per hour. All robots initially work in the closed model, and the station is initially empty. Stop at the observation horizon without draining the remaining queue. Record waiting times once charging starts, and system times once charging completes. Report undefined means as missing, never fabricated zeros. Explicitly explain the unfinished-visit and short-run bias.
+
+The reserved theory module computes Poisson open references with Erlang C only when lambda/(c*mu)<1 and closed references by adjacent-state birth-death balance: lambda_n=(N-n)*alpha, mu_n=min(n,c)*mu. A birth is a new request and a death is a finished charge, not a physical robot birth or death. Its normalization uses log space to handle large fleets without overflowing factorials. This module is currently unused by the UI and plots.
+
+Names and docstrings are English; Polish learning comments have the removable prefix # PL:. Polish UI text and README are intended for the student. Default parameter values and saved examples are demonstrations, not measured robot data. Report mean and sample SD between replications, with no claim that SD is a confidence interval.
+
+## Plan of work and milestones
+
+First build the independent event engine and exact statistics. Tests with scripted arrival and service durations must recover hand-calculated areas and times. The closed test must revisit the station with the same robot identity and conserve the fleet. Changing chart sampling density must not alter simulation outcomes.
+
+Then provide analytical reference values in theory.py, repeated grid experiments in experiments.py, downloadable exports in exports.py, and Matplotlib charts in plots.py. The closed model must have finite state probabilities summing to one, while deterministic open cases and unstable open cases must not receive fabricated Erlang C values.
+
+Finally expose all behavior in app.py and exercise it with the Streamlit AppTest API, which runs the actual app and manipulates its controls without a browser. Run run_experiments.py to generate demonstration results. Inspect the PNG plots visually, document running the application and interpreting every estimator, and update this plan with exact evidence.
+
+For the individual-service milestone, the sidebar's third choice is "Zamknięty — indywidualna obsługa". It shows one fixed duration control per charger and hides the unused common mean. The experiment form has a separate ordered duration pool and displays each scenario's actual prefix. Run the CLI with --model closed-individual --charger-times 30,10,20 --charger-counts 1,2,3 --fleet-sizes 10,15,20; it must save the same parameter grid in a closed_individual output directory. Test exact service times and a scripted simultaneous-completion example, repeatability, unchanged original models, prefix validation and persistence, downloads, and all three UI modes. Inspect the generated charts to ensure they still omit theory, system-time curves, and shortage metrics.
+
+## Concrete steps and interfaces
+
+Run commands from modele_kolejkowe/robot_charging_simulation. Python 3.10 or newer is required. Create .venv with python3 -m venv .venv and install requirements.txt using .venv/bin/python -m pip install -r requirements.txt. Start with .venv/bin/python -m streamlit run app.py. Run tests using .venv/bin/python -m unittest discover -s tests -v. Generate saved demonstrations using .venv/bin/python run_experiments.py --output examples/demo_results.
+
+Generate the new saved demonstration with .venv/bin/python run_experiments.py --model closed-individual --charger-times 30,10,20 --duration-hours 168 --repetitions 5 --output examples/demo_results. Expect 9 scenarios and 45 runs in examples/demo_results/closed_individual, with separate fixed times in scenarios.json and no unused common charging mean. Existing example directories need not be regenerated for this additive variant.
+
+SimulationConfig is a validated immutable dataclass. simulate(config) returns SimulationResult with configuration, uniformly timed history dictionaries, individual charging visits, and the first 500 state-changing events. All numerical field names in exports are English. theory.theoretical_metrics(config) returns a stationary metric dictionary or None where it does not apply. experiments.run_experiments returns one pandas row per scenario repetition; summarize_experiments returns means, sample SDs, and the observed-run count of each metric. The UI keeps results in session_state and hides stale results when parameters change.
+
+## Validation and acceptance
+
+The two model modes must run without UI exceptions. Users can change N and c in the closed model, lambda and c in the open model, the duration, mean times, seeds, and number of chart points. Requested charts show mean queue and system size, mean queue waiting time, empty-queue probability, and P(B=k) for every k from 0 to c. System residence time remains in tables and CSV only. Closed results additionally show availability, without a required-robot threshold or shortage metric. ZIP downloads include settings, time histories, visits, and charts. Event logs allow the student to follow the first events.
+
+Exact tests must check event ordering, censored observations, no-arrival runs, probability normalization, queue-empty versus station-empty distinction, FIFO, sampling invariance, and fleet conservation. Long seeded runs must approach the independent stationary benchmarks within documented numerical tolerances. AppTest must run both distributions and the closed mode, a parameter grid, and invalid parameter feedback. Inspect representative PNG charts after these tests.
+
+## Surprises and Discoveries
+
+The selected bundled runtime initially lacked Streamlit and Matplotlib. The machine's default package index pointed at a corporate repository unavailable in the sandbox. Installing public dependencies explicitly from PyPI into the new local .venv succeeded with the normal sandbox approval mechanism. No existing Python installation was changed.
+
+The source DOCX uses rho for utilization lambda/(c*mu), while the lecture uses rho for offered load lambda/mu. Code names offered_load and utilization distinguish these conventions. The original UI explanation was removed when the user requested simulation-only presentation.
+
+At the observation horizon, the two open variants can have different unfinished visit identities. A validation test must compare service draws by corresponding visit identity, not by zipping only the completed cohorts. The production simulation already used the same service stream correctly; the corrected validation test accounts for that censoring.
+
+Importing updated plot modules into an already running Streamlit server did not immediately refresh the module cache in this environment. Restarting the local server and reloading the browser verified the actual final code. The final preview has legends outside the data area. The UI uses single-column experiment charts for readability, while terminal PNG reports use a compact two-column layout.
+
+Streamlit form edits are submitted together when the form button is pressed; an unsubmitted experiment-duration edit does not update server-side state. The new UI test must submit the experiment form again before checking the new prefixes. Sidebar edits remain immediate and hide stale single-run results. Equal-time completions require batch dispatch only in the new individual-service model; leaving the original completion path unchanged preserves its seeded behavior.
+
+## Idempotence and recovery
+
+All changes are confined to the new project. Existing source materials and the root example remain unchanged. Re-running a simulation with the same settings and seed reproduces the same path. CLI output can be regenerated in a chosen directory; existing files in that output directory are replaced. The event cap raises an error rather than silently truncating statistics. .venv and user results are ignored by Git.
+
+## Outcomes and Retrospective
+
+All milestones are complete. The individual-charger variant requested on 2026-11-09 is implemented and verified with fixed per-charger times and the confirmed fastest-free FIFO rule. The project provides the original models plus this new closed variant, deterministic versus Poisson open arrivals, cumulative requested measurements, closed-fleet availability, user-editable parameter grids, repeatable seeds, downloadable CSV/PNG archives, and removable Polish learning comments. The current presentation includes simulation results only; analytical functions and their tests remain reserved for future use.
+
+The initial verification reported 25 tests passed; removal of the shortage threshold passed 28 tests. The latest 2026-11-09 full test command reported 37 tests passed in 9.949 seconds, including ten tests executing the actual Streamlit app. New checks cover fixed service times per charger, fastest-idle selection, simultaneous completions, FIFO, fleet conservation, repeatability, ordered experiment prefixes, missing-duration feedback, UI changes, and JSON/ZIP exports. Result tables and charts remain simulation-only. Closed-model controls and exported data still omit the removed threshold and shortage metric while retaining availability. The retained long-run numerical tests validate the original engine against the standalone theory module. Exact hand-calculated tests check finite-horizon measurements directly.
+
+The original demonstration command produced 18 open scenarios with 90 replications and 9 closed scenarios with 45 replications in examples/demo_results. The new closed-individual command produced 9 additional scenarios and 45 replications using the ordered fixed times 30,10,20. Each lasts 168 hours and uses five seeds. The new closed_individual CSV, JSON, and PNG files record the exact duration prefixes. examples/README.md explains that these are synthetic demonstration settings, identifies unstable open configurations, and records how to regenerate all outputs. requirements-lock.txt records the tested library versions for Python 3.12.
+
+The initial browser check used http://127.0.0.1:8501. On 2026-11-08 this port was already occupied, so its existing service was left untouched and the updated app was checked at http://127.0.0.1:8502. The visible result table contains the two simulated arrival variants only, and the chart has their four measured series with no theoretical lines. examples/app_preview.jpg now records that view. The new local server is left running for the user. There are no required unfinished implementation tasks.
+
+## Artifacts and notes
+
+2026-11-07: Initial plan records the confirmed observation-window semantics and implementation modules. No delegation or subagents are used.
+
+2026-11-07: Completed the plan with test evidence, saved demonstration outputs, a dependency lock, responsive chart presentation, explicit overload labels, and actual browser verification. These additions make the model measurements reproducible and avoid confusing an observation-window result with stationary theory.
+
+2026-11-08: Updated the current behavior to match the user's request to hide all theoretical results while preserving the numerical module. All 27 tests passed; a live browser check and updated preview confirm the simulation-only presentation. The existing staged deletion of modele_kolejkowe/main.py was not part of this change.
+
+2026-11-08: Unified line-chart colors by arrival distribution (blue Poisson, orange deterministic) and used green for the closed model. Line styles distinguish metrics, occupancy states, and experiment parameter values. The same styling applies to exported plots. All 27 existing tests passed after this presentation change.
+
+2026-11-08: Removed the required-robot threshold and shortage metric at the user's request. The closed model keeps mean working-robot count and fleet availability; the event path is unchanged. Updated documentation, CLI examples, and saved CSV/JSON/PNG demonstrations. The original proposal DOCX is unchanged. All 28 tests passed, including closed-model UI and export checks.
+
+2026-11-09: Completed the individual-charger closed-system extension using the user's confirmed fixed service times, shared FIFO/fastest-idle dispatch, and first-c-prefix experiment choices. Added the engine, UI, experiment, export, and CLI paths plus numerical and UI checks. All 37 tests passed; 45 new demonstration runs and visual inspection of their PNG plots succeeded. A full single-run ZIP with all chart groups was generated successfully, and the local app was restarted at http://127.0.0.1:8502. The previous project was committed before this task; the unrelated Word lock file remains untouched. No new dependencies, theory output, system-time curves, or shortage metric were introduced.

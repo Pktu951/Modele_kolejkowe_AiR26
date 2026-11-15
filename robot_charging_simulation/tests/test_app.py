@@ -3,6 +3,7 @@
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 from streamlit.testing.v1 import AppTest
 
@@ -25,6 +26,21 @@ class AppTests(unittest.TestCase):
             self.assertNotIn(reference, text)
         self.assertEqual(len(app.latex), 0)
 
+    def assert_closed_arrival_panel(self, app, result):
+        self.assertEqual(len(app.table), 1)
+        table = app.table[0].value
+        self.assertEqual(list(table.columns), ["Wartość [zgłoszenia/h]", "Co oznacza?"])
+        self.assertEqual(len(table), 3)
+        self.assertTrue(table.index[0].endswith("α"))
+        self.assertIn("λₙ", table.index[1])
+        self.assertIn("λ_obs", table.index[2])
+        working = result.config.fleet_size - result.summary["system_size"]
+        self.assertEqual(
+            {metric.label: int(metric.value) for metric in app.metric},
+            {"Oczekujące": result.summary["queue_length"], "Ładowane": result.summary["busy_chargers"], "Pracujące": working},
+        )
+        self.assertTrue(any(expander.label == "Jak obliczamy te wartości?" for expander in app.expander))
+
     def test_open_comparison_and_result_download(self):
         app = self.app()
         app.button("run_simulation").click().run(timeout=60)
@@ -33,6 +49,8 @@ class AppTests(unittest.TestCase):
         self.assertEqual([r.config.arrival_distribution for r in results], ["poisson", "deterministic"])
         self.assertEqual(len(app.dataframe), 3)
         self.assert_simulation_only(app, expected_columns=2)
+        self.assertEqual(len(app.table), 0)
+        self.assertEqual(len(app.metric), 0)
         self.assertEqual(len(app.get("download_button")), 1)
         arrivals = [r.summary["arrivals"] for r in results]
         app.run(timeout=60)
@@ -53,6 +71,7 @@ class AppTests(unittest.TestCase):
         self.assertNotIn("shortage_probability", result.summary)
         self.assertNotIn("Ryzyko niedoboru P(R < m)", app.dataframe[0].value.index)
         self.assert_simulation_only(app, expected_columns=1)
+        self.assert_closed_arrival_panel(app, result)
         self.assertEqual(len(app.get("download_button")), 1)
 
     def test_individual_closed_service_and_parameter_changes(self):
@@ -68,6 +87,7 @@ class AppTests(unittest.TestCase):
         self.assertEqual(result.config.charger_times, (30.0, 10.0, 20.0))
         self.assertTrue(0 <= result.summary["availability"] <= 1)
         self.assert_simulation_only(app, expected_columns=1)
+        self.assert_closed_arrival_panel(app, result)
         self.assertIn("indywidualna obsługa", app.dataframe[0].value.columns[0])
         self.assertEqual(len(app.get("download_button")), 1)
         for visit in result.visits:
@@ -76,6 +96,66 @@ class AppTests(unittest.TestCase):
         app.number_input("charger_time_1").set_value(8.0).run(timeout=60)
         self.assertFalse(app.exception)
         self.assertEqual(len(app.dataframe), 0)
+
+    def test_closed_arrival_panel_matches_seed_41_and_updates_source_caption(self):
+        app = self.app()
+        app.radio("model_choice").set_value("Zamknięty").run(timeout=60)
+        app.number_input("seed").set_value(41)
+        app.number_input("duration_hours").set_value(100 / 60)
+        app.button("run_simulation").click().run(timeout=60)
+        self.assertFalse(app.exception)
+        result = app.session_state["simulation_results"][1][0]
+        self.assert_closed_arrival_panel(app, result)
+        self.assertEqual(app.table[0].value["Wartość [zgłoszenia/h]"].tolist(), [0.5, 3.0, 6.0])
+        self.assertTrue(any("w chwili 100 min" in label for label in app.table[0].value.index))
+        self.assertTrue(any("α = 0,5 zgłoszeń/h" in caption.value for caption in app.caption))
+        app.number_input("mean_work").set_value(60.0).run(timeout=60)
+        self.assertFalse(app.exception)
+        self.assertTrue(any("α = 1 zgłoszeń/h" in caption.value for caption in app.caption))
+        self.assertEqual(len(app.table), 0)
+        self.assertEqual(len(app.metric), 0)
+
+    def test_closed_arrival_time_controls_seek_without_resimulation(self):
+        app = self.app()
+        app.radio("model_choice").set_value("Zamknięty").run(timeout=60)
+        app.number_input("seed").set_value(41)
+        app.number_input("duration_hours").set_value(2.0)
+        app.button("run_simulation").click().run(timeout=60)
+        original = app.session_state["simulation_results"][1][0]
+        self.assertEqual(app.slider("arrival_time_closed_slider").value, 120.0)
+        self.assertEqual(app.number_input("arrival_time_closed_input").value, 120.0)
+        with patch("simulation.simulate", side_effect=AssertionError("Seeking must not rerun the simulation")):
+            app.number_input("arrival_time_closed_input").set_value(100.0).run(timeout=60)
+            self.assertFalse(app.exception)
+            self.assertEqual(app.slider("arrival_time_closed_slider").value, 100.0)
+            self.assertEqual(app.table[0].value["Wartość [zgłoszenia/h]"].tolist(), [0.5, 3.0, 6.0])
+            app.slider("arrival_time_closed_slider").set_value(50.0).run(timeout=60)
+            self.assertFalse(app.exception)
+            self.assertEqual(app.number_input("arrival_time_closed_input").value, 50.0)
+            self.assertEqual(app.table[0].value["Wartość [zgłoszenia/h]"].tolist(), [0.5, 2.5, 8.4])
+            self.assertEqual({metric.label: metric.value for metric in app.metric}, {"Oczekujące": "3", "Ładowane": "2", "Pracujące": "5"})
+            app.number_input("arrival_time_closed_input").set_value(0.0).run(timeout=60)
+            self.assertFalse(app.exception)
+            self.assertTrue(app.table[0].value["Wartość [zgłoszenia/h]"].isna().iloc[2])
+            self.assertEqual({metric.label: metric.value for metric in app.metric}, {"Oczekujące": "0", "Ładowane": "0", "Pracujące": "10"})
+        self.assertEqual(app.session_state["simulation_results"][1][0].visits, original.visits)
+        self.assertEqual(app.session_state["simulation_results"][1][0].summary, original.summary)
+
+    def test_individual_arrival_time_resets_for_new_simulation_parameters(self):
+        app = self.app()
+        app.radio("model_choice").set_value("Zamknięty — indywidualna obsługa").run(timeout=60)
+        app.number_input("duration_hours").set_value(2.0)
+        app.button("run_simulation").click().run(timeout=60)
+        app.slider("arrival_time_closed_individual_slider").set_value(100.0).run(timeout=60)
+        self.assertFalse(app.exception)
+        self.assertEqual(app.number_input("arrival_time_closed_individual_input").value, 100.0)
+        self.assertTrue(any("w chwili 100 min" in label for label in app.table[0].value.index))
+        app.number_input("duration_hours").set_value(1.0).run(timeout=60)
+        self.assertEqual(len(app.table), 0)
+        app.button("run_simulation").click().run(timeout=60)
+        self.assertFalse(app.exception)
+        self.assertEqual(app.slider("arrival_time_closed_individual_slider").value, 60.0)
+        self.assertEqual(app.number_input("arrival_time_closed_individual_input").value, 60.0)
 
     def test_individual_closed_grid_uses_entered_time_prefixes(self):
         app = self.app()

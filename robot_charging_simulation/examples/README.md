@@ -1,5 +1,7 @@
 # Przykładowe eksperymenty
 
+Plik `arrival_intensity_preview.png` pokazuje panel intensywności z regulacją chwili odczytu dla zwykłego modelu zamkniętego: seed=41, N=10, c=2, pełny przebieg 120 minut, średnia praca 120 minut i średnie ładowanie 20 minut. Na suwaku i w polu liczbowym wybrano t=100 minut. Tabela rozróżnia α=0,5/h, λₙ=3/h i λ_obs=6/h (10 zgłoszeń do 100. minuty). Poniżej pokazuje stan w tej samej chwili: 2 oczekujące, 2 ładowane i 6 pracujących robotów.
+
 Plik `instantaneous_closed_seed41.png` pokazuje dodatkowo wartości chwilowe zwykłego modelu zamkniętego: N=10, c=2, seed=41, średnia praca 120 minut, średnie ładowanie 20 minut, obserwacja 100 minut. W ostatnim punkcie 2 roboty czekają (niebieska linia ciągła) i 2 się ładują (pomarańczowa linia ciągła). Wykres zawiera dokładne momenty zmian, a nie średnie narastające; nie rysuje łącznej liczby robotów przy stacji.
 
 Te wyniki powstały w symulatorze dla parametrów demonstracyjnych. Nie są pomiarami rzeczywistych robotów i nie stanowią rekomendacji liczby ładowarek dla konkretnej instalacji.

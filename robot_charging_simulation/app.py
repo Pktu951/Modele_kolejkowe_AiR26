@@ -13,9 +13,17 @@ from experiments import (
     run_experiments, summarize_experiments,
 )
 from exports import experiment_archive, result_archive
+from metrics import closed_arrival_summary
 from models import SimulationConfig
 from plots import experiment_chart, history_charts, result_label
 from simulation import SimulationLimitError, simulate
+
+
+def format_number(value: float) -> str:
+    """Use a decimal comma and omit insignificant trailing zeros in UI text."""
+    if pd.isna(value):
+        return "—"
+    return f"{value:.6f}".rstrip("0").rstrip(".").replace(".", ",")
 
 
 def sidebar_controls() -> tuple[SimulationConfig, list[str], bool]:
@@ -56,6 +64,7 @@ def sidebar_controls() -> tuple[SimulationConfig, list[str], bool]:
         else:
             fleet_size = st.number_input("Liczba robotów N", 1, 5000, 10, key="fleet_size")
             mean_work = st.number_input("Średni czas pracy 1/α [min]", 0.01, 100_000.0, 120.0, key="mean_work")
+            st.caption(f"α = {format_number(60.0 / mean_work)} zgłoszeń/h na pracującego robota.")
             st.caption("Ta sama flota wielokrotnie pracuje, czeka i ładuje się. Wymagane c ≤ N.")
         seed = st.number_input("Ziarno losowania", 0, 2**31 - 1, 42, key="seed")
         sample_count = st.slider("Liczba punktów na wykresach średnich i prawdopodobieństw", 51, 1001, 301, step=50, key="sample_count")
@@ -72,6 +81,94 @@ def sidebar_controls() -> tuple[SimulationConfig, list[str], bool]:
     return config, distributions, submitted
 
 
+def sync_inspection_time(source_key: str, target_key: str) -> None:
+    """Synchronize the slider and numeric input before the next app rerun."""
+    st.session_state[target_key] = st.session_state[source_key]
+
+
+def select_inspection_time(result) -> float:
+    """Select a point in an existing trajectory without drawing new events."""
+    prefix = f"arrival_time_{result.config.variant_key}"
+    slider_key, input_key, signature_key = f"{prefix}_slider", f"{prefix}_input", f"{prefix}_signature"
+    signature = json.dumps(result.config.to_dict(), sort_keys=True)
+    end_time = float(result.summary["time"])
+    if (
+        st.session_state.get(signature_key) != signature
+        or slider_key not in st.session_state or input_key not in st.session_state
+    ):
+        # PL: Nowe parametry przebiegu resetują oba pola do końca nowej symulacji.
+        st.session_state[signature_key] = signature
+        st.session_state[slider_key] = end_time
+        st.session_state[input_key] = end_time
+    slider_column, input_column = st.columns([3, 1])
+    with slider_column:
+        st.slider(
+            "Chwila odczytu [min]", 0.0, end_time, step=min(0.01, end_time),
+            key=slider_key, on_change=sync_inspection_time, args=(slider_key, input_key),
+        )
+    with input_column:
+        st.number_input(
+            "Dokładny czas [min]", 0.0, end_time, step=min(1.0, end_time), format="%.6f",
+            key=input_key, on_change=sync_inspection_time, args=(input_key, slider_key),
+        )
+    return float(st.session_state[input_key])
+
+
+def display_closed_arrival_summary(result) -> float:
+    """Separate a fixed source parameter from selected-state and observed rates."""
+    st.subheader("Intensywność zgłoszeń")
+    observation_time = select_inspection_time(result)
+    summary = closed_arrival_summary(result, observation_time)
+    time_label = format_number(summary["time"])
+    st.caption(
+        f"Seed: {result.config.seed} · Odczyt: {time_label} min · "
+        f"Pełny przebieg: {format_number(result.summary['time'])} min · "
+        f"Roboty: {result.config.fleet_size} · Ładowarki: {result.config.chargers}"
+    )
+    # PL: Wiersze rozróżniają stały parametr, wybraną chwilę i średnią od początku do tej chwili.
+    table = pd.DataFrame([
+        {
+            "Wielkość": "Pojedynczy pracujący robot — α",
+            "Wartość [zgłoszenia/h]": summary["alpha_per_hour"],
+            "Co oznacza?": f"Stały parametr ze średniego czasu pracy {format_number(result.config.mean_work_time)} min.",
+        },
+        {
+            "Wielkość": f"Cała flota — λₙ w chwili {time_label} min",
+            "Wartość [zgłoszenia/h]": summary["state_arrival_rate_per_hour"],
+            "Co oznacza?": f"Intensywność dla {summary['working_robots']} pracujących robotów w tej chwili.",
+        },
+        {
+            "Wielkość": f"Zaobserwowany napływ — λ_obs od 0 do {time_label} min",
+            "Wartość [zgłoszenia/h]": summary["observed_arrival_rate_per_hour"],
+            "Co oznacza?": f"Liczba zgłoszeń do ładowania w tym okresie: {summary['arrivals']}.",
+        },
+    ])
+    # PL: Statyczna tabela pozwala zawinąć objaśnienia bez poziomego przewijania.
+    st.table(table.set_index("Wielkość").style.format({"Wartość [zgłoszenia/h]": format_number}, na_rep="—"))
+    st.caption(f"Stan floty w chwili {time_label} min")
+    for column, label, field in zip(
+        st.columns(3),
+        ("Oczekujące", "Ładowane", "Pracujące"),
+        ("queue_length", "busy_chargers", "working_robots"),
+    ):
+        column.metric(label, summary[field])
+    with st.expander("Jak obliczamy te wartości?", expanded=False):
+        st.markdown(
+            "**α** jest stałą intensywnością zgłoszeń jednego robota podczas pracy: "
+            "`α = 60 / średni czas pracy [min]` w zgłoszeniach/h. "
+            "Nie oznacza stałych odstępów: czas pracy nadal losujemy z rozkładu wykładniczego.\n\n"
+            "**λₙ** dotyczy stanu w wybranej chwili: `λₙ = (N − n) × α`, "
+            "gdzie `n = oczekujące + ładowane`, a `N − n` to liczba pracujących robotów.\n\n"
+            "**λ_obs** jest średnią z obserwacji: `λ_obs = liczba zgłoszeń / (czas [min] / 60)`. "
+            "Każdy powrót do stacji liczymy jako kolejne zgłoszenie, także gdy robot zaczyna ładowanie od razu. "
+            "Okres obejmuje czas od 0 do wybranej chwili, więc wartość może różnić się od λₙ. "
+            "Dla czasu 0 λ_obs jest nieokreślona i pokazujemy „—”.\n\n"
+            "Zmiana chwili odczytu nie losuje nowego przebiegu. "
+            "Średni czas oczekiwania W w tabeli wyników końcowych nadal pochodzi z pełnej symulacji."
+        )
+    return observation_time
+
+
 def display_results(results):
     columns = {}
     names = list(METRIC_LABELS) if results[0].config.model == "closed" else list(METRIC_LABELS)[:6]
@@ -82,8 +179,6 @@ def display_results(results):
         pd.DataFrame(columns, index=[METRIC_LABELS[name] for name in names]).style.format("{:.4f}", na_rep="—"),
         width="stretch",
     )
-    st.caption("Wyniki pochodzą z symulacji. Stacja na początku jest pusta, więc pomiary obejmują również okres rozruchu.")
-    st.caption("„System” na wykresach oznacza kolejkę i ładowarki. Pracujące poza stacją roboty modelu zamkniętego nie są wliczane do K.")
     for result in results:
         row = result.summary
         st.write(
@@ -93,12 +188,10 @@ def display_results(results):
         )
         if not row["completions"]:
             st.info("Nie zakończyło się jeszcze żadne ładowanie. Średni czas w systemie jest nieokreślony (—).")
-    st.caption(
-        "Q i K są średnimi ważonymi czasem. W jest średnim pełnym oczekiwaniem zgłoszeń, "
-        "które rozpoczęły ładowanie; T jest średnim czasem zgłoszeń, które zakończyły ładowanie. "
-        "Niezakończone obserwacje nie są traktowane jako zera. Krótkie przebiegi mogą zaniżać te czasy."
-    )
-    st.caption("Pusta kolejka oznacza brak oczekujących — ładowarki mogą wtedy nadal pracować. B to liczba zajętych ładowarek.")
+    inspection_times = {}
+    for result in results:
+        if result.config.model == "closed":
+            inspection_times[result.config.variant_key] = display_closed_arrival_summary(result)
     st.caption(
         "Wykresy chwilowe pokazują liczbę oczekujących (niebieski) i ładowanych (pomarańczowy) w danej chwili. "
         "Schodki zmieniają się w momentach zdarzeń; pozostałe wykresy pokazują miary narastające."
@@ -107,7 +200,7 @@ def display_results(results):
     for figure in figures.values():
         st.pyplot(figure, width="stretch")
     st.download_button(
-        "Pobierz wykresy i dane symulacji (ZIP)", result_archive(results, figures),
+        "Pobierz wykresy i dane symulacji (ZIP)", result_archive(results, figures, inspection_times),
         file_name="charging_simulation.zip", mime="application/zip", key="download_simulation",
     )
     for figure in figures.values():
@@ -205,7 +298,7 @@ def experiments_tab(config, distributions):
         "charger_times": "Stałe czasy ładowarek [min]",
         "service_type": "Obsługa",
     }), width="stretch", hide_index=True)
-    st.caption("Punkty to średnie z powtórzeń, a słupki błędu pokazują ± jedno odchylenie standardowe. To nie są przedziały ufności.")
+    st.caption("Punkty to średnie z powtórzeń, a słupki błędu pokazują ± jedno odchylenie standardowe.")
     if repetitions == 1:
         st.info("Jedno powtórzenie nie pozwala oszacować zmienności między przebiegami.")
     if raw["completions"].eq(0).any():

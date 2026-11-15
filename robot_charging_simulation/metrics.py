@@ -1,8 +1,50 @@
 """Exact time integrals, running estimates, and event-time counts."""
 
-from math import nan
+from math import isfinite, nan
 
 from models import SimulationResult
+
+
+def closed_arrival_summary(result: SimulationResult, observation_time: float | None = None) -> dict:
+    """Report source, selected-state, and cumulative observed rates per hour."""
+    if result.config.model != "closed":
+        raise ValueError("Closed arrival summary requires a closed model.")
+    row = result.summary
+    if observation_time is not None:
+        if not isfinite(observation_time) or not 0 <= observation_time <= row["time"]:
+            raise ValueError("Observation time must be finite and within the recorded simulation window.")
+        # PL: Odczytujemy dokładny stan po wszystkich zdarzeniach do wskazanej chwili.
+        # PL: Nie wybieramy najbliższej próbki i nie uruchamiamy ponownie symulacji.
+        arrivals = sum(visit.arrived_at <= observation_time for visit in result.visits)
+        starts = sum(
+            visit.started_at is not None and visit.started_at <= observation_time
+            for visit in result.visits
+        )
+        completions = sum(
+            visit.departed_at is not None and visit.departed_at <= observation_time
+            for visit in result.visits
+        )
+        row = {
+            "time": observation_time, "arrivals": arrivals,
+            "queue_length": arrivals - starts, "busy_chargers": starts - completions,
+            "system_size": arrivals - completions,
+        }
+    working = result.config.fleet_size - row["system_size"]
+    # PL: Silnik liczy minuty. Mnożnik 60 przelicza intensywności na zgłoszenia/h.
+    alpha_per_hour = 60.0 / result.config.mean_work_time
+    return {
+        "time": row["time"],
+        "arrivals": row["arrivals"],
+        "queue_length": row["queue_length"],
+        "busy_chargers": row["busy_chargers"],
+        "working_robots": working,
+        "alpha_per_hour": alpha_per_hour,
+        "state_arrival_rate_per_hour": working * alpha_per_hour,
+        # PL: Średnią zaobserwowaną liczymy z całego okresu, a nie ze stanu końcowego.
+        "observed_arrival_rate_per_hour": (
+            row["arrivals"] * 60.0 / row["time"] if row["time"] > 0 else nan
+        ),
+    }
 
 
 def instantaneous_history(result: SimulationResult) -> list[dict]:

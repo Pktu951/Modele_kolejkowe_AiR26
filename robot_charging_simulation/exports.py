@@ -6,7 +6,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 import pandas as pd
 
-from metrics import instantaneous_history
+from metrics import closed_arrival_summary, instantaneous_history
 from models import SimulationResult
 
 
@@ -16,7 +16,10 @@ def figure_png(figure) -> bytes:
     return buffer.getvalue()
 
 
-def result_archive(results: list[SimulationResult], figures: dict) -> bytes:
+def result_archive(
+    results: list[SimulationResult], figures: dict,
+    inspection_times: dict[str, float] | None = None,
+) -> bytes:
     buffer = BytesIO()
     with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
         for result in results:
@@ -24,6 +27,11 @@ def result_archive(results: list[SimulationResult], figures: dict) -> bytes:
             archive.writestr(f"{name}/config.json", json.dumps(result.config.to_dict(), indent=2))
             archive.writestr(f"{name}/history.csv", pd.DataFrame(result.history).to_csv(index=False))
             archive.writestr(f"{name}/instantaneous_history.csv", pd.DataFrame(instantaneous_history(result)).to_csv(index=False))
+            if result.config.model == "closed":
+                archive.writestr(
+                    f"{name}/arrival_intensity.csv",
+                    pd.DataFrame([closed_arrival_summary(result, (inspection_times or {}).get(name))]).to_csv(index=False),
+                )
             archive.writestr(f"{name}/visits.csv", pd.DataFrame([v.to_dict() for v in result.visits]).to_csv(index=False))
             archive.writestr(f"{name}/first_500_events.csv", pd.DataFrame(result.event_log).to_csv(index=False))
         for name, figure in figures.items():

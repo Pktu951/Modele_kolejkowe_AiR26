@@ -1,0 +1,47 @@
+{
+  "config": {
+    "model": "closed",
+    "chargers": 2,
+    "duration": 100,
+    "mean_charge_time": 20.0,
+    "charger_times": null,
+    "arrival_rate": 0.06666666666666667,
+    "arrival_distribution": "poisson",
+    "fleet_size": 10,
+    "mean_work_time": 120.0,
+    "seed": 41,
+    "sample_count": 301,
+    "max_events": 500000
+  },
+  "summary": {
+    "time": 100,
+    "queue_length": 1,
+    "system_size": 3,
+    "busy_chargers": 2,
+    "mean_queue_length": 1.0139419773905887,
+    "mean_system_size": 2.924902388366543,
+    "mean_wait_time": 9.511271761732749,
+    "mean_system_time": 31.43071768222432,
+    "queue_empty_probability": 0.35153163080786853,
+    "utilization": 0.9554802054879774,
+    "arrivals": 11,
+    "service_starts": 10,
+    "completions": 8,
+    "unfinished_visits": 3,
+    "mean_available_robots": 7.075097611633454,
+    "availability": 0.7075097611633454,
+    "prob_busy_0": 0.011389609697645997,
+    "prob_busy_1": 0.06626036962875316,
+    "prob_busy_2": 0.9223500206736008
+  },
+  "rates": {
+    "time": 100,
+    "arrivals": 11,
+    "queue_length": 1,
+    "busy_chargers": 2,
+    "working_robots": 7,
+    "alpha_per_hour": 0.5,
+    "state_arrival_rate_per_hour": 3.5,
+    "observed_arrival_rate_per_hour": 6.6
+  }
+}

@@ -48,7 +48,11 @@ We wszystkich wariantach obowiązuje wspólna kolejka FIFO. W otwartym i standar
 
 Wszystkie wykresy biegną od chwili 0 do wybranego końca obserwacji. Średnie i prawdopodobieństwa są narastające, a nie obliczane osobno dla krótkich przedziałów. W silniku jednostką czasu jest minuta; interfejs przelicza godziny i napływ na godzinę na minuty.
 
-Na wykresach liniowych kolor oznacza wariant: niebieski — Poisson, pomarańczowy — deterministyczny, zielony — model zamknięty. Różne miary, stany zajętości lub wartości parametrów w obrębie danego wariantu rozróżniają style linii. Dla pary Q/K kolejka ma linię ciągłą, a system — przerywaną. Wykres czasu przedstawia tylko średni czas oczekiwania w kolejce W. Czas pobytu w systemie T pozostaje w tabelach i danych CSV; nie jest rysowany również na wykresach eksperymentów.
+Każdy wariant ma także osobny wykres **„Chwilowa liczba robotów”** z dwiema ciągłymi liniami schodkowymi: oczekujący (niebieska) i ładowani (pomarańczowa). Łączna liczba robotów przy stacji nie jest na nim rysowana. Są to całkowite liczby robotów w danej chwili. W modelu otwartym każdy wybrany napływ ma własny wykres chwilowy. Schodki pokazują stan po zdarzeniach w danym momencie, aż do następnej zmiany. Obejmują wszystkie przyjazdy i zmiany obsługi, również te między próbkami średnich i po pierwszych 500 zdarzeniach. Jednoczesne zdarzenia są łączone w jeden stan, a wykres kończy się dokładnie na zadanym czasie symulacji. Suwak liczby punktów nie zmienia tych schodków.
+
+Przykładowo zwykły model zamknięty z seedem 41, N=10, c=2, średnią pracą 120 min i ładowaniem 20 min po 100 minutach ma 2 roboty oczekujące, 2 ładowane i 4 przy stacji. Wartości chwilowe odróżniają ten stan od średnich liczonych od początku przebiegu.
+
+Na pozostałych wykresach liniowych kolor oznacza wariant: niebieski — Poisson, pomarańczowy — deterministyczny, zielony — model zamknięty. Różne miary, stany zajętości lub wartości parametrów w obrębie danego wariantu rozróżniają style linii. Dla pary Q/K kolejka ma linię ciągłą, a system — przerywaną. Wykres czasu przedstawia tylko średni czas oczekiwania w kolejce W. Czas pobytu w systemie T pozostaje w tabelach i danych CSV; nie jest rysowany również na wykresach eksperymentów.
 
 „System” w miarach K i T oznacza samą stację: kolejkę i ładowarki. Także w modelu zamkniętym nie zaliczamy tu robotów pracujących poza stacją. Liczba robotów w całym zamkniętym obiegu zawsze wynosi N.
 
@@ -89,7 +93,7 @@ W `results/open`, `results/closed` lub `results/closed_individual` powstaną `ru
 
 Przykładowe, już wykonane serie są w `examples/demo_results`. Ich parametry i sposób odtworzenia opisuje `examples/README.md`. Pole `offered_utilization` / „u nominalne” oznacza zadane obciążenie modelu otwartego λ/(cμ). Jeśli jest ≥1, wyniki są miarami skończonego, przeciążonego przebiegu. W takim przypadku nie są oszacowaniem stabilnego stanu ustalonego; ich wartość zależy od czasu obserwacji.
 
-W aplikacji ZIP z pojedynczej symulacji zawiera pełne parametry, historię miar, wizyty robotów, pierwsze 500 zdarzeń i wszystkie wykresy PNG. W ZIP z eksperymentów znajdują się tabele, ustawienia i wykres porównawczy. Nazwy kolumn w plikach danych są angielskie.
+W aplikacji ZIP z pojedynczej symulacji zawiera pełne parametry, historię miar (`history.csv`), dokładne stany chwilowe (`instantaneous_history.csv`), wizyty robotów, pierwsze 500 zdarzeń i wszystkie wykresy PNG, w tym nowe wykresy chwilowe. W `instantaneous_history.csv` kolumny `queue_length`, `busy_chargers` i `system_size` oznaczają odpowiednio oczekujących, ładowanych i razem przy stacji. W ZIP z eksperymentów znajdują się tabele, ustawienia i wykres porównawczy. Nazwy kolumn w plikach danych są angielskie.
 
 Metadane eksperymentów zawierają `service_type` i `charger_times`, aby odróżnić indywidualną stałą obsługę od wspólnych czasów wykładniczych. Dla indywidualnej obsługi nieużywana wspólna średnia `mean_charge_time` jest pomijana w konfiguracji JSON i pusta w CSV. W `visits.csv` identyfikatory `charger_id` zaczynają się od 0: wartość 0 odpowiada ładowarce nr 1 w aplikacji.
 
@@ -97,7 +101,7 @@ Metadane eksperymentów zawierają `service_type` i `charger_times`, aby odróż
 
 1. `models.py` — parametry i struktury pojedynczej wizyty oraz wyniku.
 2. `simulation.py` — `run()` tworzy zdarzenia, `handle_arrival()` przydziela stanowisko lub kolejkę, `handle_departure()` kończy obsługę i ewentualnie planuje powrót robota.
-3. `metrics.py` — `advance()` dolicza czas starego stanu przed jego zmianą; `snapshot()` odczytuje średnie narastające.
+3. `metrics.py` — `advance()` dolicza czas starego stanu przed jego zmianą; `snapshot()` odczytuje średnie narastające; `instantaneous_history()` odtwarza dokładne stany chwilowe z czasów wizyt robotów.
 4. `theory.py` — zachowane obliczenia analityczne na później; aplikacja i wykresy obecnie z nich nie korzystają.
 5. `experiments.py` — kombinacje parametrów, powtórzenia i podsumowanie.
 6. `plots.py` i `exports.py` — rysowanie i eksport wyników.

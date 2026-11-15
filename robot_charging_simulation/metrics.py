@@ -1,6 +1,34 @@
-"""Exact time integrals and running estimates, independent of plot sampling."""
+"""Exact time integrals, running estimates, and event-time counts."""
 
 from math import nan
+
+from models import SimulationResult
+
+
+def instantaneous_history(result: SimulationResult) -> list[dict]:
+    """Recover exact post-event counts from all visits, including unfinished visits."""
+    changes = {0.0: [0, 0], result.config.duration: [0, 0]}
+    for visit in result.visits:
+        # PL: Przyjazd dodaje robota do kolejki, a start ładowania go z niej usuwa.
+        changes.setdefault(visit.arrived_at, [0, 0])[0] += 1
+        if visit.started_at is not None:
+            change = changes.setdefault(visit.started_at, [0, 0])
+            change[0] -= 1
+            change[1] += 1
+        if visit.departed_at is not None:
+            changes.setdefault(visit.departed_at, [0, 0])[1] -= 1
+    queue_length, busy = 0, 0
+    history = []
+    # PL: Sumujemy zmiany z tej samej chwili, aby nie rysować stanów trwających zero czasu.
+    # PL: Używamy wszystkich wizyt, bo dziennik zdarzeń zawiera tylko pierwszych 500 zdarzeń.
+    for time, (queue_change, busy_change) in sorted(changes.items()):
+        queue_length += queue_change
+        busy += busy_change
+        history.append({
+            "time": time, "queue_length": queue_length,
+            "busy_chargers": busy, "system_size": queue_length + busy,
+        })
+    return history
 
 
 class TimeStatistics:

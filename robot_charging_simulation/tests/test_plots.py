@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from models import SimulationConfig
+from metrics import instantaneous_history
 from plots import history_charts
 from simulation import simulate
 
@@ -29,6 +30,17 @@ class SimulationOnlyChartTests(unittest.TestCase):
         with patch("theory.theoretical_metrics", side_effect=AssertionError("Theory must stay unused")):
             figures = history_charts(results)
         try:
+            for result in results:
+                lines = figures[f"instantaneous_{result.config.variant_key}"].axes[0].lines
+                self.assertEqual(len(lines), 2)
+                states = instantaneous_history(result)
+                for line, metric in zip(lines, ("queue_length", "busy_chargers")):
+                    self.assertEqual(line.get_drawstyle(), "steps-post")
+                    np.testing.assert_allclose(line.get_xdata(), [row["time"] for row in states])
+                    np.testing.assert_array_equal(line.get_ydata(), [row[metric] for row in states])
+                self.assertEqual(len({line.get_color() for line in lines}), 2)
+                self.assertTrue(all(line.get_linestyle() == "-" for line in lines))
+                self.assertEqual([line.get_label() for line in lines], ["Oczekujące", "Ładowane"])
             for name, metrics in expected_metrics.items():
                 lines = figures[name].axes[0].lines
                 self.assertEqual(len(lines), len(results) * len(metrics), name)

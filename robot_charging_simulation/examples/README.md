@@ -1,5 +1,7 @@
 # Przykładowe eksperymenty
 
+Plik `instantaneous_closed_seed41.png` pokazuje dodatkowo wartości chwilowe zwykłego modelu zamkniętego: N=10, c=2, seed=41, średnia praca 120 minut, średnie ładowanie 20 minut, obserwacja 100 minut. W ostatnim punkcie 2 roboty czekają (niebieska linia ciągła) i 2 się ładują (pomarańczowa linia ciągła). Wykres zawiera dokładne momenty zmian, a nie średnie narastające; nie rysuje łącznej liczby robotów przy stacji.
+
 Te wyniki powstały w symulatorze dla parametrów demonstracyjnych. Nie są pomiarami rzeczywistych robotów i nie stanowią rekomendacji liczby ładowarek dla konkretnej instalacji.
 
 Każdy przebieg trwał 168 godzin. Dwa pierwotne modele miały wykładnicze czasy ładowania o średniej 20 minut; nowy wariant indywidualny ma stałe czasy opisane poniżej. Każdy wariant miał 5 powtórzeń z ziarnami 42–46. Stacja początkowo była pusta, a w modelach zamkniętych wszystkie roboty pracowały.

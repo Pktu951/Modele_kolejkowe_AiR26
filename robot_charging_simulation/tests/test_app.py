@@ -57,7 +57,7 @@ class AppTests(unittest.TestCase):
 
     def test_individual_closed_service_and_parameter_changes(self):
         app = self.app()
-        app.radio("model_choice").set_value("Zamknięty - indywidualna obsługa").run(timeout=60)
+        app.radio("model_choice").set_value("Zamknięty — indywidualna obsługa").run(timeout=60)
         app.number_input("chargers").set_value(3).run(timeout=60)
         self.assertNotIn("mean_charge", [widget.key for widget in app.number_input])
         for index, duration in enumerate((30.0, 10.0, 20.0)):

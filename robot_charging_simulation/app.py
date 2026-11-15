@@ -58,7 +58,7 @@ def sidebar_controls() -> tuple[SimulationConfig, list[str], bool]:
             mean_work = st.number_input("Średni czas pracy 1/α [min]", 0.01, 100_000.0, 120.0, key="mean_work")
             st.caption("Ta sama flota wielokrotnie pracuje, czeka i ładuje się. Wymagane c ≤ N.")
         seed = st.number_input("Ziarno losowania", 0, 2**31 - 1, 42, key="seed")
-        sample_count = st.slider("Liczba punktów na wykresach", 51, 1001, 301, step=50, key="sample_count")
+        sample_count = st.slider("Liczba punktów na wykresach średnich i prawdopodobieństw", 51, 1001, 301, step=50, key="sample_count")
         submitted = st.button("Uruchom symulację", type="primary", key="run_simulation")
     # PL: Interfejs używa godzin dla czasu eksperymentu i napływu, a silnik minut.
     config = SimulationConfig(
@@ -99,6 +99,10 @@ def display_results(results):
         "Niezakończone obserwacje nie są traktowane jako zera. Krótkie przebiegi mogą zaniżać te czasy."
     )
     st.caption("Pusta kolejka oznacza brak oczekujących — ładowarki mogą wtedy nadal pracować. B to liczba zajętych ładowarek.")
+    st.caption(
+        "Wykresy chwilowe pokazują liczbę oczekujących (niebieski) i ładowanych (pomarańczowy) w danej chwili. "
+        "Schodki zmieniają się w momentach zdarzeń; pozostałe wykresy pokazują miary narastające."
+    )
     figures = history_charts(results)
     for figure in figures.values():
         st.pyplot(figure, width="stretch")
@@ -236,8 +240,10 @@ def model_notes():
         "**Dostępność:** n oznacza liczbę robotów czekających lub ładowanych. "
         "R=N−n to liczba pracujących robotów, E[R] jej średnia, "
         "A=E[R]/N to średni udział dostępnej floty.\n\n"
-        "**Pomiar:** długości i prawdopodobieństwa są ważone czasem; wykresy przedstawiają "
-        "oszacowania narastające od chwili 0. Zwiększenie liczby punktów wykresu nie zmienia przebiegu. "
+        "**Pomiar:** wykresy chwilowe pokazują dokładną liczbę robotów między zdarzeniami. "
+        "Wykresy średnich i prawdopodobieństw pokazują oszacowania narastające od chwili 0, "
+        "a średnie długości i prawdopodobieństwa są ważone czasem. "
+        "Liczba punktów dotyczy tylko tych miar narastających; nie zmienia przebiegu ani schodków chwilowych. "
         "W chwili 0 średnie czasowe są nieokreślone.\n\n"
         "**Początek i koniec:** stacja jest początkowo pusta; w modelu zamkniętym wszystkie roboty pracują. "
         "Zatrzymujemy się dokładnie po zadanym czasie, pozostawiając niezakończone zgłoszenia. "

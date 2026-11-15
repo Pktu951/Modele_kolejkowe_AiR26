@@ -4,14 +4,16 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
 import numpy as np
 import pandas as pd
 
 from experiments import DISTRIBUTION_LABELS
+from metrics import instantaneous_history
 from models import SimulationResult
 
 
-# PL: Kolor oznacza rozkład/model, a styl linii rozróżnia serie tego samego koloru.
+# PL: Na wykresach narastających kolor oznacza rozkład/model, a styl rozróżnia miary.
 SERIES_COLORS = {
     "poisson": "#1f77b4",
     "deterministic": "#ff7f0e",
@@ -64,8 +66,12 @@ def _history_panel(results, metrics, title, y_label, probability=False):
 
 
 def history_charts(results: list[SimulationResult]) -> dict:
-    """Plot every requested running metric and the occupancy distribution."""
+    """Plot instantaneous counts, running metrics, and the occupancy distribution."""
     figures = {
+        f"instantaneous_{result.config.variant_key}": instantaneous_chart(result)
+        for result in results
+    }
+    figures.update({
         "mean_counts": _history_panel(
             results,
             [("mean_queue_length", "Q — kolejka"), ("mean_system_size", "K — system")],
@@ -86,7 +92,7 @@ def history_charts(results: list[SimulationResult]) -> dict:
             "Średnie wykorzystanie ładowarek od początku symulacji",
             "Udział dostępnego czasu ładowarek", probability=True,
         ),
-    }
+    })
     for result in results:
         frame = pd.DataFrame(result.history)
         columns = [f"prob_busy_{k}" for k in range(result.config.chargers + 1)]
@@ -114,6 +120,27 @@ def history_charts(results: list[SimulationResult]) -> dict:
             "Dostępność floty od początku symulacji", "Udział floty", True,
         )
     return figures
+
+
+def instantaneous_chart(result: SimulationResult):
+    """Use post-event steps so every horizontal segment shows the actual state."""
+    frame = pd.DataFrame(instantaneous_history(result))
+    figure, axis = plt.subplots(figsize=(8.5, 4.5), layout="constrained")
+    for metric, label, color in (
+        ("queue_length", "Oczekujące", "#1f77b4"),
+        ("busy_chargers", "Ładowane", "#ff7f0e"),
+    ):
+        # PL: Schodek obowiązuje od zdarzenia do kolejnego zdarzenia (where="post").
+        axis.step(
+            frame["time"], frame[metric], where="post", label=label,
+            color=color, linestyle="-", linewidth=1.7,
+        )
+    _format_axis(axis, f"Chwilowa liczba robotów · {result_label(result)}", "Liczba robotów")
+    axis.yaxis.set_major_locator(MaxNLocator(integer=True))
+    axis.set_ylim(0, max(1, frame[["queue_length", "busy_chargers"]].to_numpy().max()) + 0.3)
+    axis.set_xlim(0, result.config.duration)
+    figure.legend(*axis.get_legend_handles_labels(), loc="outside lower center", fontsize=10, ncol=2)
+    return figure
 
 
 def experiment_chart(summary: pd.DataFrame, columns: int = 2):

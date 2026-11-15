@@ -1,6 +1,7 @@
 """Repeat scenarios and summarize variability between independent runs."""
 
 from dataclasses import replace
+import json
 from math import isfinite
 from typing import Callable
 
@@ -24,6 +25,23 @@ DISTRIBUTION_LABELS = {
     "poisson": "Poisson (M/M/c)",
     "deterministic": "Deterministyczny (D/M/c)",
 }
+SERVICE_LABELS = {
+    "shared_exponential": "Jednakowe ładowarki · czasy wykładnicze",
+    "individual_deterministic": "Indywidualne ładowarki · stałe czasy",
+}
+
+
+def parse_charger_times(text: str) -> tuple[float, ...]:
+    """Keep charger order and repeated values when parsing fixed durations."""
+    try:
+        values = tuple(float(part.strip()) for part in text.replace(";", ",").split(","))
+    except ValueError as error:
+        raise ValueError("Wpisz czasy ładowarek oddzielone przecinkami, np. 10, 30, 20.") from error
+    if not values or any(not isfinite(value) or value <= 0 for value in values):
+        raise ValueError("Czasy ładowarek muszą być skończone i większe od zera.")
+    if len(values) > 64:
+        raise ValueError("Można podać czasy najwyżej 64 ładowarek.")
+    return values
 
 
 def parse_values(text: str, integer: bool = False) -> list:
@@ -49,16 +67,26 @@ def build_scenarios(
     fleet_sizes: list[int] | None = None,
     arrival_rates_per_hour: list[float] | None = None,
     distributions: list[str] | None = None,
+    charger_times: tuple[float, ...] | None = None,
 ) -> tuple[list[SimulationConfig], list[str]]:
     scenarios = []
     skipped = []
+    time_pool = charger_times if charger_times is not None else base.charger_times
+    if charger_times is not None and not base.individual_service:
+        raise ValueError("Lista czasów dotyczy modelu zamkniętego z indywidualną obsługą.")
     if base.model == "closed":
         for fleet_size in fleet_sizes or [base.fleet_size]:
             for chargers in charger_counts:
                 if chargers > fleet_size:
                     skipped.append(f"N={fleet_size}, c={chargers}")
                     continue
-                scenarios.append(replace(base, chargers=chargers, fleet_size=fleet_size))
+                times = None
+                if base.individual_service:
+                    if len(time_pool) < chargers:
+                        raise ValueError(f"Podaj co najmniej {chargers} czasów ładowarek dla wariantu c={chargers}.")
+                    # PL: Zachowujemy kolejność użytkownika: c ładowarek = pierwsze c czasów.
+                    times = tuple(time_pool[:chargers])
+                scenarios.append(replace(base, chargers=chargers, fleet_size=fleet_size, charger_times=times))
     else:
         for rate in arrival_rates_per_hour or [base.arrival_rate * 60]:
             for chargers in charger_counts:
@@ -102,7 +130,9 @@ def run_experiments(
                 "fleet_size": config.fleet_size if config.model == "closed" else None,
                 "arrival_rate_per_hour": config.arrival_rate * 60 if config.model == "open" else None,
                 "duration": config.duration,
-                "mean_charge_time": config.mean_charge_time,
+                "mean_charge_time": None if config.individual_service else config.mean_charge_time,
+                "service_type": config.service_type,
+                "charger_times": json.dumps(config.charger_times) if config.individual_service else None,
                 "mean_work_time": config.mean_work_time if config.model == "closed" else None,
                 "offered_utilization": (
                     config.arrival_rate * config.mean_charge_time / config.chargers
@@ -121,7 +151,7 @@ def summarize_experiments(raw: pd.DataFrame) -> pd.DataFrame:
     metadata = [
         "scenario_id", "model", "distribution", "chargers", "fleet_size",
         "arrival_rate_per_hour", "duration", "mean_charge_time", "mean_work_time",
-        "offered_utilization",
+        "offered_utilization", "service_type", "charger_times",
     ]
     for _, group in raw.groupby("scenario_id", sort=False):
         row = {name: group.iloc[0][name] for name in metadata}

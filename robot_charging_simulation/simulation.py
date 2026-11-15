@@ -48,6 +48,19 @@ class ChargingSimulation:
     def charge_duration(self) -> float:
         return self.charge_rng.expovariate(1.0 / self.config.mean_charge_time)
 
+    def select_free_charger(self) -> int:
+        """Choose the fastest idle charger for individual service; ties use its ID."""
+        if self.config.individual_service:
+            free = (index for index, visit in enumerate(self.slots) if visit is None)
+            # PL: Krótszy stały czas oznacza szybszą ładowarkę. Remis rozstrzyga numer.
+            return min(free, key=lambda index: (self.config.charger_times[index], index))
+        return self.slots.index(None)
+
+    def dispatch_queue(self, time: float) -> None:
+        """Start waiting visits in FIFO order using the currently idle chargers."""
+        while self.queue and self.busy < self.config.chargers:
+            self.start_charge(self.queue.popleft(), self.select_free_charger(), time)
+
     def work_duration(self) -> float:
         return self.work_rng.expovariate(1.0 / self.config.mean_work_time)
 
@@ -66,14 +79,19 @@ class ChargingSimulation:
         self.slots[charger_id] = visit
         self.busy += 1
         self.statistics.record_start(time - visit.arrived_at)
-        self.schedule(time + self.charge_duration(), "departure", visit.robot_id, charger_id)
+        # PL: Nowy wariant nie losuje czasu: każda obsługa trwa tyle, ile przypisano ładowarce.
+        duration = (
+            self.config.charger_times[charger_id]
+            if self.config.individual_service else self.charge_duration()
+        )
+        self.schedule(time + duration, "departure", visit.robot_id, charger_id)
 
     def handle_arrival(self, time: float, robot_id: int) -> None:
         self.statistics.arrivals += 1
         visit = Visit(len(self.visits), robot_id, time)
         self.visits.append(visit)
         if self.busy < self.config.chargers:
-            self.start_charge(visit, self.slots.index(None), time)
+            self.start_charge(visit, self.select_free_charger(), time)
         else:
             self.queue.append(visit)
         if self.config.model == "open":
@@ -91,7 +109,7 @@ class ChargingSimulation:
         if self.config.model == "closed":
             # PL: Ten sam robot wraca do pracy i dopiero po niej ponownie się zgłosi.
             self.schedule(time + self.work_duration(), "arrival", visit.robot_id)
-        if self.queue:
+        if self.queue and not self.config.individual_service:
             # PL: popleft wybiera robota czekającego najdłużej (FIFO).
             self.start_charge(self.queue.popleft(), charger_id, time)
 
@@ -126,6 +144,15 @@ class ChargingSimulation:
                 self.handle_arrival(time, robot_id)
             else:
                 self.handle_departure(time, charger_id)
+                if self.config.individual_service:
+                    # PL: Najpierw zwalniamy wszystkie ładowarki kończące w tej samej chwili.
+                    # PL: Dopiero potem roboty z kolejki dostają najszybsze wolne stanowiska.
+                    more_departures = (
+                        self.events and self.events[0][0] == time
+                        and self.events[0][3] == "departure"
+                    )
+                    if not more_departures:
+                        self.dispatch_queue(time)
             if len(self.event_log) < 500:
                 self.event_log.append({
                     "time": time, "event": kind, "robot_id": robot_id,

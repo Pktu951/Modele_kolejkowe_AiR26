@@ -43,8 +43,11 @@ def open_theory(config: SimulationConfig) -> dict | None:
     }
 
 
-def closed_theory(config: SimulationConfig) -> dict:
+def closed_theory(config: SimulationConfig) -> dict | None:
     """Solve the birth-death chain with N-n working sources and c chargers."""
+    # PL: Stałe i różne czasy obsługi nie pasują do tego wzoru dla jednakowych ładowarek.
+    if config.individual_service:
+        return None
     log_weights = [0.0]
     for state in range(1, config.fleet_size + 1):
         birth_rate = (config.fleet_size - state + 1) / config.mean_work_time

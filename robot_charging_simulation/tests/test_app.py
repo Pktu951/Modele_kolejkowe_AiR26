@@ -55,6 +55,58 @@ class AppTests(unittest.TestCase):
         self.assert_simulation_only(app, expected_columns=1)
         self.assertEqual(len(app.get("download_button")), 1)
 
+    def test_individual_closed_service_and_parameter_changes(self):
+        app = self.app()
+        app.radio("model_choice").set_value("Zamknięty — indywidualna obsługa").run(timeout=60)
+        app.number_input("chargers").set_value(3).run(timeout=60)
+        self.assertNotIn("mean_charge", [widget.key for widget in app.number_input])
+        for index, duration in enumerate((30.0, 10.0, 20.0)):
+            app.number_input(f"charger_time_{index}").set_value(duration)
+        app.button("run_simulation").click().run(timeout=60)
+        self.assertFalse(app.exception)
+        result = app.session_state["simulation_results"][1][0]
+        self.assertEqual(result.config.charger_times, (30.0, 10.0, 20.0))
+        self.assertTrue(0 <= result.summary["availability"] <= 1)
+        self.assert_simulation_only(app, expected_columns=1)
+        self.assertIn("indywidualna obsługa", app.dataframe[0].value.columns[0])
+        self.assertEqual(len(app.get("download_button")), 1)
+        for visit in result.visits:
+            if visit.departed_at is not None:
+                self.assertAlmostEqual(visit.departed_at - visit.started_at, result.config.charger_times[visit.charger_id])
+        app.number_input("charger_time_1").set_value(8.0).run(timeout=60)
+        self.assertFalse(app.exception)
+        self.assertEqual(len(app.dataframe), 0)
+
+    def test_individual_closed_grid_uses_entered_time_prefixes(self):
+        app = self.app()
+        app.radio("model_choice").set_value("Zamknięty — indywidualna obsługa").run(timeout=60)
+        app.text_input("individual_grid_chargers").set_value("1,2,3")
+        app.text_input("grid_charger_times").set_value("30,10,20")
+        app.text_input("grid_fleets").set_value("2,4")
+        app.number_input("repetitions").set_value(2)
+        app.button("run_experiments").click().run(timeout=60)
+        self.assertFalse(app.exception)
+        _, raw, summary, scenarios, skipped = app.session_state["experiment_results"]
+        self.assertEqual(len(raw), 10)
+        self.assertEqual(len(summary), 5)
+        self.assertEqual(len(skipped), 1)
+        self.assertEqual(scenarios[-1].charger_times, (30.0, 10.0, 20.0))
+        self.assertIn("Stałe czasy ładowarek [min]", app.dataframe[0].value.columns)
+        self.assertEqual(len(app.get("download_button")), 1)
+        app.text_input("grid_charger_times").set_value("30,12,20")
+        app.button("run_experiments").click().run(timeout=60)
+        self.assertFalse(app.exception)
+        self.assertEqual(app.session_state["experiment_results"][3][-1].charger_times, (30.0, 12.0, 20.0))
+
+    def test_individual_closed_grid_rejects_missing_charger_times(self):
+        app = self.app()
+        app.radio("model_choice").set_value("Zamknięty — indywidualna obsługa").run(timeout=60)
+        app.text_input("individual_grid_chargers").set_value("1,3")
+        app.text_input("grid_charger_times").set_value("10,20")
+        app.button("run_experiments").click().run(timeout=60)
+        self.assertFalse(app.exception)
+        self.assertTrue(any("co najmniej 3" in error.value for error in app.error))
+
     def test_open_grid_runs_both_distributions(self):
         app = self.app()
         app.text_input("grid_chargers").set_value("1,2")

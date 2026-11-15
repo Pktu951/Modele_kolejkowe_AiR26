@@ -8,7 +8,8 @@ import pandas as pd
 import streamlit as st
 
 from experiments import (
-    DISTRIBUTION_LABELS, METRIC_LABELS, build_scenarios, parse_values,
+    DISTRIBUTION_LABELS, METRIC_LABELS, SERVICE_LABELS, build_scenarios,
+    parse_charger_times, parse_values,
     run_experiments, summarize_experiments,
 )
 from exports import experiment_archive, result_archive
@@ -20,11 +21,27 @@ from simulation import SimulationLimitError, simulate
 def sidebar_controls() -> tuple[SimulationConfig, list[str], bool]:
     with st.sidebar:
         st.header("Parametry symulacji")
-        model_label = st.radio("Model", ["Otwarty", "Zamknięty"], key="model_choice")
+        model_label = st.radio(
+            "Model", ["Otwarty", "Zamknięty", "Zamknięty — indywidualna obsługa"], key="model_choice",
+        )
         model = "open" if model_label == "Otwarty" else "closed"
+        individual_service = model_label == "Zamknięty — indywidualna obsługa"
         chargers = st.number_input("Liczba ładowarek c", 1, 64, 2, key="chargers")
         duration_hours = st.number_input("Czas symulacji [h]", 0.1, 100_000.0, 24.0, key="duration_hours")
-        mean_charge = st.number_input("Średni czas ładowania 1/μ [min]", 0.01, 100_000.0, 20.0, key="mean_charge")
+        mean_charge = 20.0
+        charger_times = None
+        if individual_service:
+            with st.expander("Indywidualne czasy ładowania", expanded=True):
+                st.caption("Stały czas każdej obsługi. Robot wybiera najszybszą wolną ładowarkę; wspólna kolejka FIFO.")
+                charger_times = tuple(
+                    st.number_input(
+                        f"Czas ładowania — ładowarka {index + 1} [min]",
+                        0.01, 100_000.0, 20.0, key=f"charger_time_{index}",
+                    )
+                    for index in range(chargers)
+                )
+        else:
+            mean_charge = st.number_input("Średni czas ładowania 1/μ [min]", 0.01, 100_000.0, 20.0, key="mean_charge")
         distributions = ["poisson"]
         arrival_rate = 4.0
         fleet_size, mean_work = 10, 120.0
@@ -47,6 +64,7 @@ def sidebar_controls() -> tuple[SimulationConfig, list[str], bool]:
     config = SimulationConfig(
         model=model, chargers=chargers, duration=duration_hours * 60,
         mean_charge_time=mean_charge, arrival_rate=arrival_rate / 60,
+        charger_times=charger_times,
         arrival_distribution=distributions[0] if distributions else "poisson",
         fleet_size=fleet_size, mean_work_time=mean_work,
         seed=seed, sample_count=sample_count,
@@ -105,16 +123,33 @@ def experiments_tab(config, distributions):
         "z różnymi ziarnami. Wartości dziesiętne zapisuj kropką."
     )
     with st.form("experiment_form"):
-        charger_text = st.text_input("Liczby ładowarek c", "1, 2, 3", key="grid_chargers")
+        default_counts = (
+            ", ".join(str(count) for count in range(1, min(config.chargers, 3) + 1))
+            if config.individual_service else "1, 2, 3"
+        )
+        charger_text = st.text_input(
+            "Liczby ładowarek c", default_counts,
+            key="individual_grid_chargers" if config.individual_service else "grid_chargers",
+        )
+        charger_times_text = None
+        if config.individual_service:
+            charger_times_text = st.text_input(
+                "Stałe czasy ładowarek dla eksperymentów [min]",
+                ", ".join(f"{value:g}" for value in config.charger_times), key="grid_charger_times",
+            )
+            st.caption("Wariant z c ładowarkami używa pierwszych c czasów z tej listy, w podanej kolejności. Podaj czas także dla każdej dodatkowej ładowarki.")
         if config.model == "closed":
             size_text = st.text_input("Liczby robotów N", "10, 15, 20", key="grid_fleets")
         else:
             size_text = st.text_input("Intensywności napływu λ [zgłoszenia/h]", "2, 4, 6", key="grid_rates")
             st.caption("Każda kombinacja zostanie zbadana dla wybranych napływów Poissona i/lub deterministycznego.")
         repetitions = st.number_input("Liczba powtórzeń każdego wariantu", 1, 30, 5, key="repetitions")
-        st.caption(f"Czas każdego przebiegu: {config.duration / 60:g} h; średnie ładowanie: {config.mean_charge_time:g} min.")
+        if config.individual_service:
+            st.caption(f"Czas każdego przebiegu: {config.duration / 60:g} h; stałe czasy ładowania z listy powyżej.")
+        else:
+            st.caption(f"Czas każdego przebiegu: {config.duration / 60:g} h; średnie ładowanie: {config.mean_charge_time:g} min.")
         submitted = st.form_submit_button("Uruchom eksperymenty", key="run_experiments")
-    signature = json.dumps([config.to_dict(), distributions, charger_text, size_text, repetitions], sort_keys=True)
+    signature = json.dumps([config.to_dict(), distributions, charger_text, size_text, repetitions, charger_times_text], sort_keys=True)
     if submitted:
         progress = st.progress(0.0, text="Przygotowanie eksperymentów")
         try:
@@ -129,6 +164,7 @@ def experiments_tab(config, distributions):
                 fleet_sizes=sizes if config.model == "closed" else None,
                 arrival_rates_per_hour=sizes if config.model == "open" else None,
                 distributions=distributions,
+                charger_times=parse_charger_times(charger_times_text) if config.individual_service else None,
             )
             raw = run_experiments(
                 scenarios, repetitions,
@@ -149,15 +185,21 @@ def experiments_tab(config, distributions):
     if skipped:
         st.warning("Pominięto niepoprawne kombinacje (c > N): " + "; ".join(skipped))
     display_columns = ["chargers", "fleet_size" if config.model == "closed" else "arrival_rate_per_hour", "distribution", "repetitions"]
+    if config.individual_service:
+        display_columns += ["service_type", "charger_times"]
     if config.model == "open":
         if summary["offered_utilization"].ge(1).any():
             st.warning("Seria zawiera warianty przeciążone. Kolejka może narastać; wyniki dotyczą wybranego czasu obserwacji.")
     metrics = list(METRIC_LABELS) if config.model == "closed" else list(METRIC_LABELS)[:6]
     display = summary[display_columns + metrics].copy()
+    if config.individual_service:
+        display["service_type"] = display["service_type"].map(SERVICE_LABELS)
     display["distribution"] = display["distribution"].map({**DISTRIBUTION_LABELS, "closed": "Zamknięty"})
     st.dataframe(display.rename(columns={
         "chargers": "Ładowarki c", "fleet_size": "Roboty N", "arrival_rate_per_hour": "Napływ λ [/h]",
         "distribution": "Napływ", "repetitions": "Powtórzenia", **METRIC_LABELS,
+        "charger_times": "Stałe czasy ładowarek [min]",
+        "service_type": "Obsługa",
     }), width="stretch", hide_index=True)
     st.caption("Punkty to średnie z powtórzeń, a słupki błędu pokazują ± jedno odchylenie standardowe. To nie są przedziały ufności.")
     if repetitions == 1:
@@ -181,9 +223,14 @@ def model_notes():
         "**Drugi napływ: deterministyczny D, model D/M/c/FIFO/∞/O.** Odstęp wynosi zawsze "
         "1/λ. Ma tę samą średnią intensywność co wariant Poissona; zmieniamy jedynie losowość napływu. "
         "Czasy ładowania nadal są wykładnicze.\n\n"
-        "**Model zamknięty M/M/c/FIFO/N/F:** N robotów pracuje i wraca do ładowania. "
+        "**Model zamknięty z jednakowymi ładowarkami, M/M/c/FIFO/N/F:** N robotów pracuje i wraca do ładowania. "
         "Średni czas pracy to 1/α, a średni czas ładowania to 1/μ. Roboty w kolejce lub przy ładowarkach "
-        "są niedostępne do pracy."
+        "są niedostępne do pracy.\n\n"
+        "**Model zamknięty — indywidualna obsługa:** każda ładowarka ma własny, stały czas ładowania. "
+        "Czas pracy robota nadal jest losowy, wykładniczy. Kolejka jest wspólna i obsługiwana FIFO. "
+        "Robot trafia do najszybszej wolnej ładowarki; przy równych czasach wybieramy niższy numer. "
+        "Jeżeli kilka ładowarek kończy w tej samej chwili, najpierw wszystkie się zwalniają, "
+        "a następnie przydzielamy roboty z kolejki."
     )
     st.markdown(
         "**Dostępność:** n oznacza liczbę robotów czekających lub ładowanych. "

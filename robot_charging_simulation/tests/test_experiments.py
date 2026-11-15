@@ -9,7 +9,7 @@ from zipfile import ZipFile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from experiments import build_scenarios, parse_values, run_experiments, summarize_experiments
+from experiments import build_scenarios, parse_charger_times, parse_values, run_experiments, summarize_experiments
 from exports import result_archive
 from models import SimulationConfig
 from simulation import simulate
@@ -66,6 +66,40 @@ class ExperimentTests(unittest.TestCase):
             self.assertNotIn("min_available", frame.columns)
             self.assertFalse(any("shortage" in name for name in frame.columns))
             self.assertIn("availability", frame.columns)
+
+    def test_individual_service_grid_prefixes_and_exports(self):
+        config = SimulationConfig(model="closed", charger_times=(30.0, 10.0), duration=600)
+        scenarios, skipped = build_scenarios(
+            config, [1, 2, 3], fleet_sizes=[2, 4], charger_times=(30.0, 10.0, 20.0),
+        )
+        self.assertEqual(len(scenarios), 5)
+        self.assertEqual(skipped, ["N=2, c=3"])
+        self.assertEqual([scenario.charger_times for scenario in scenarios], [
+            (30.0,), (30.0, 10.0), (30.0,), (30.0, 10.0), (30.0, 10.0, 20.0),
+        ])
+        raw = run_experiments(scenarios, 2)
+        summary = summarize_experiments(raw)
+        self.assertEqual(len(raw), 10)
+        self.assertEqual(len(summary), 5)
+        self.assertTrue(summary["service_type"].eq("individual_deterministic").all())
+        self.assertTrue(raw["mean_charge_time"].isna().all())
+        self.assertEqual(json.loads(summary.iloc[-1]["charger_times"]), [30.0, 10.0, 20.0])
+        result = simulate(scenarios[-1])
+        with ZipFile(BytesIO(result_archive([result], {}))) as archive:
+            settings = json.loads(archive.read("closed_individual/config.json"))
+            self.assertEqual(settings["charger_times"], [30.0, 10.0, 20.0])
+            self.assertNotIn("mean_charge_time", settings)
+            restored = SimulationConfig(**settings)
+            self.assertEqual(simulate(restored).visits, result.visits)
+
+    def test_individual_service_time_parser_and_missing_chargers(self):
+        self.assertEqual(parse_charger_times("30, 10; 30"), (30.0, 10.0, 30.0))
+        for text in ("", "0,20", "-1,20", "nan,20", "inf,20", "10,", "a,20", ",".join(["10"] * 65)):
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                parse_charger_times(text)
+        config = SimulationConfig(model="closed", charger_times=(30.0, 10.0))
+        with self.assertRaisesRegex(ValueError, "co najmniej 3"):
+            build_scenarios(config, [3], fleet_sizes=[4])
 
 
 if __name__ == "__main__":

@@ -20,13 +20,17 @@ Plik `requirements-lock.txt` zapisuje dokładne wersje użyte do sprawdzenia pro
 
 ## Co można ustawić
 
-W panelu po lewej wybierz model, liczbę ładowarek, czas obserwacji, średni czas ładowania, ziarno losowania i liczbę punktów wykresu. Wartości początkowe są wyłącznie demonstracyjne, a nie pomiarami rzeczywistych robotów.
+W panelu po lewej wybierz model, liczbę ładowarek, czas obserwacji, ziarno losowania i liczbę punktów wykresu. Dla modelu otwartego i standardowego zamkniętego podajesz wspólny średni czas ładowania. Dla nowego wariantu **Zamknięty — indywidualna obsługa** podajesz osobny, stały czas każdej ładowarki w minutach. Wartości początkowe są wyłącznie demonstracyjne, a nie pomiarami rzeczywistych robotów.
 
 W modelu otwartym podajesz intensywność napływu λ w zgłoszeniach na godzinę. Zgodnie z ustaleniem symulacja trwa zadany czas; liczba przybyłych robotów jest wynikiem. Każdy robot odwiedza stację raz. Możesz zaznaczyć oba rozkłady i porównać je bezpośrednio na tych samych wykresach.
 
 W modelu zamkniętym podajesz N robotów w stałej flocie oraz średni czas ich pracy. Te same roboty wielokrotnie odwiedzają stację. Wymagane jest c ≤ N. Dostępność oceniamy przez średnią liczbę pracujących robotów E[R] i średni udział dostępnej floty A.
 
+W wariancie indywidualnym ładowarka o czasie 10 minut zawsze ładuje przez 10 minut, a ładowarka o czasie 30 minut zawsze przez 30 minut. Nie losujemy tych czasów. Czas pracy robotów poza stacją nadal jest losowy, o rozkładzie wykładniczym. Roboty czekają w jednej wspólnej kolejce FIFO. Gdy kilka stanowisk jest wolnych, robot trafia do najszybszego; przy równych czasach wybieramy niższy numer ładowarki.
+
 Zakładka **Eksperymenty** przyjmuje listy liczb ładowarek oraz listy N (zamknięty) lub λ (otwarty). Program bada ich kombinacje, wykonuje wskazaną liczbę powtórzeń i pokazuje średnią oraz odchylenie standardowe między przebiegami. Niepoprawne kombinacje zamknięte są jawnie wypisane jako pominięte. Zmiana parametrów ukrywa stare wyniki, aby nie przypisać ich nowym ustawieniom.
+
+Dla indywidualnej obsługi formularz eksperymentów zawiera dodatkową listę stałych czasów. Wariant z c ładowarkami używa **pierwszych c pozycji**, bez sortowania i usuwania powtórzeń. Przykład `30, 10, 20`: c=1 oznacza ładowarkę 30-minutową, c=2 dodaje 10-minutową, a c=3 dodaje 20-minutową. Jeśli zabraknie czasu dla któregoś stanowiska, program poprosi o uzupełnienie listy. Edycje formularza eksperymentów zatwierdzasz przyciskiem „Uruchom eksperymenty”.
 
 ## Modele i drugi rozkład napływu
 
@@ -36,7 +40,9 @@ Zakładka **Eksperymenty** przyjmuje listy liczb ładowarek oraz listy N (zamkni
 
 **Zamknięty, M/M/c/FIFO/N/F.** Każdy pracujący robot zgłasza potrzebę ładowania po wykładniczym czasie pracy o średniej 1/α. Dla n robotów przy stacji intensywność przyjść to (N−n)α, a ukończeń min(n,c)μ. Roboty w kolejce i przy ładowarkach są niedostępne do pracy. Czas pracy i kolejne czasy ładowania są niezależne.
 
-W obu modelach obowiązuje FIFO oraz c identycznych, niezależnych ładowarek. Każdy robot może czekać; ładowanie nie jest przerywane. Stacja na początku jest pusta, a w zamkniętym modelu wszystkie roboty pracują. Nie modelujemy dojazdów, awarii, bilansu energii, rozładowania baterii w kolejce ani wspólnego limitu mocy.
+**Zamknięty — indywidualna obsługa.** N robotów powtarza cykl pracy i ładowania, ale ładowarka i ma własny stały czas dᵢ. Obsługa nie jest wykładnicza. Lista `charger_times` w konfiguracji przechowuje dokładnie c czasów w kolejności numerów ładowarek. Gdy kilka stanowisk kończy obsługę jednocześnie, silnik najpierw zwalnia wszystkie, a potem przydziela czekające roboty do najszybszych wolnych ładowarek. Nie przerywa ani nie przenosi rozpoczętego ładowania.
+
+We wszystkich wariantach obowiązuje wspólna kolejka FIFO. W otwartym i standardowym zamkniętym ładowarki są jednakowe; wariant indywidualny pozwala na różne stałe czasy obsługi. Każdy robot może czekać; ładowanie nie jest przerywane. Stacja na początku jest pusta, a w zamkniętych wariantach wszystkie roboty pracują. Nie modelujemy dojazdów, awarii, bilansu energii, rozładowania baterii w kolejce ani wspólnego limitu mocy.
 
 ## Jak czytać wykresy
 
@@ -66,7 +72,7 @@ Symulacja kończy się dokładnie po zadanym czasie i nie opróżnia pozostałej
 
 Wykresy, tabele i eksportowane wykresy przedstawiają wyłącznie wyniki symulacji. Aplikacja nie wywołuje obliczeń teoretycznych ani nie pokazuje linii odniesienia lub kolumn z wartościami analitycznymi. Porównanie Poissona z napływem deterministycznym nadal dotyczy dwóch symulowanych przebiegów.
 
-Kod w `theory.py` i jego testy pozostają w projekcie jako niezależny moduł do ewentualnego wykorzystania później. Zawiera on obliczenia Erlanga C dla modelu otwartego oraz rozwiązanie procesu narodzin i śmierci dla modelu zamkniętego. Aby w przyszłości dodać porównanie, można ponownie wywołać `theoretical_metrics(config)` i osobno zaprezentować zwrócone wartości.
+Kod w `theory.py` i jego testy pozostają w projekcie jako niezależny moduł do ewentualnego wykorzystania później. Zawiera on obliczenia Erlanga C dla modelu otwartego oraz rozwiązanie procesu narodzin i śmierci dla standardowego modelu zamkniętego. Dla indywidualnych stałych czasów zwraca `None`, ponieważ dotychczasowy wzór zakłada jednakowe ładowarki i wykładniczą obsługę. Aby w przyszłości dodać porównanie dla obsługiwanych modeli, można ponownie wywołać `theoretical_metrics(config)` i osobno zaprezentować zwrócone wartości.
 
 Pomiary obejmują cały wybrany czas, w tym rozruch od pustej stacji. Ostrzeżenia o przeciążeniu pozostają pomocniczą informacją o parametrach przebiegu.
 
@@ -76,13 +82,16 @@ Pomiary obejmują cały wybrany czas, w tym rozruch od pustej stacji. Ostrzeżen
 python run_experiments.py --model both --duration-hours 168 --repetitions 5
 python run_experiments.py --model closed --fleet-sizes 8,12,20 --charger-counts 1,2,4
 python run_experiments.py --model open --arrival-rates 2,4,8 --charger-counts 1,2,3
+python run_experiments.py --model closed-individual --charger-times 30,10,20 --charger-counts 1,2,3 --fleet-sizes 8,12,20
 ```
 
-W `results/open` i/lub `results/closed` powstaną `runs.csv` (każde powtórzenie), `summary.csv` (średnie i odchylenia), `scenarios.json` (pełne parametry) i `experiments.png`. Słupki błędu na wykresach to ± jedno odchylenie standardowe, a nie przedziały ufności. CSV podaje również liczbę powtórzeń z zaobserwowanym wynikiem danej miary. Nie należy traktować brakujących obserwacji jako zer. Limit jednej serii to 600 przebiegów, a limit pojedynczej symulacji to 500 000 zdarzeń; przekroczenie kończy się jawnym błędem.
+W `results/open`, `results/closed` lub `results/closed_individual` powstaną `runs.csv` (każde powtórzenie), `summary.csv` (średnie i odchylenia), `scenarios.json` (pełne parametry) i `experiments.png`. Opcja `--model both` zachowuje dwa pierwotne modele; nowy wariant wybierasz przez `--model closed-individual` z wymaganym `--charger-times`. Słupki błędu na wykresach to ± jedno odchylenie standardowe, a nie przedziały ufności. CSV podaje również liczbę powtórzeń z zaobserwowanym wynikiem danej miary. Nie należy traktować brakujących obserwacji jako zer. Limit jednej serii to 600 przebiegów, a limit pojedynczej symulacji to 500 000 zdarzeń; przekroczenie kończy się jawnym błędem.
 
 Przykładowe, już wykonane serie są w `examples/demo_results`. Ich parametry i sposób odtworzenia opisuje `examples/README.md`. Pole `offered_utilization` / „u nominalne” oznacza zadane obciążenie modelu otwartego λ/(cμ). Jeśli jest ≥1, wyniki są miarami skończonego, przeciążonego przebiegu. W takim przypadku nie są oszacowaniem stabilnego stanu ustalonego; ich wartość zależy od czasu obserwacji.
 
 W aplikacji ZIP z pojedynczej symulacji zawiera pełne parametry, historię miar, wizyty robotów, pierwsze 500 zdarzeń i wszystkie wykresy PNG. W ZIP z eksperymentów znajdują się tabele, ustawienia i wykres porównawczy. Nazwy kolumn w plikach danych są angielskie.
+
+Metadane eksperymentów zawierają `service_type` i `charger_times`, aby odróżnić indywidualną stałą obsługę od wspólnych czasów wykładniczych. Dla indywidualnej obsługi nieużywana wspólna średnia `mean_charge_time` jest pomijana w konfiguracji JSON i pusta w CSV. W `visits.csv` identyfikatory `charger_id` zaczynają się od 0: wartość 0 odpowiada ładowarce nr 1 w aplikacji.
 
 ## Jak prześledzić kod
 
@@ -102,6 +111,6 @@ Angielskie nazwy i docstringi stanowią właściwą dokumentację kodu. Wszystki
 python -m unittest discover -s tests -v
 ```
 
-Testy sprawdzają ręcznie policzony przebieg FIFO, całki po czasie, moment końca obserwacji, brakujące czasy niezakończonych wizyt, zachowanie liczby robotów, powroty tych samych robotów, normalizację prawdopodobieństw, niezależność od próbkowania wykresu, znane rozwiązania analityczne i długookresową zgodność symulacji z teorią. Testy interfejsu wykonują rzeczywisty kod Streamlit przez AppTest.
+Testy sprawdzają ręcznie policzony przebieg FIFO, całki po czasie, moment końca obserwacji, brakujące czasy niezakończonych wizyt, zachowanie liczby robotów, powroty tych samych robotów, normalizację prawdopodobieństw, niezależność od próbkowania wykresu, znane rozwiązania analityczne i długookresową zgodność symulacji z teorią. Dla nowego wariantu sprawdzają też stałe czasy poszczególnych ładowarek, wybór najszybszej, jednoczesne zakończenia, prefiksy listy czasów i odtwarzanie z eksportu JSON. Testy interfejsu wykonują rzeczywisty kod Streamlit przez AppTest dla wszystkich trzech wyborów modelu.
 
 Źródła wzorów: [V. G. Kulkarni, rozdział 5.2.1](https://vkulkarn.web.unc.edu/wp-content/uploads/sites/17199/2018/07/HealthCareModels.pdf) oraz [J. Sztrik, rozdział 3.4](https://irh.inf.unideb.hu/~jsztrik/publications/books/GlobeEdit_Basic_Queueing_Theory_Sztrik_2016.pdf). Dokumentacja techniczna: [Streamlit AppTest](https://docs.streamlit.io/develop/api-reference/app-testing).

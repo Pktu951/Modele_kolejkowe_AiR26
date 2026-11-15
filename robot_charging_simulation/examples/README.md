@@ -2,13 +2,15 @@
 
 Te wyniki powstały w symulatorze dla parametrów demonstracyjnych. Nie są pomiarami rzeczywistych robotów i nie stanowią rekomendacji liczby ładowarek dla konkretnej instalacji.
 
-Każdy przebieg trwał 168 godzin. Średni czas ładowania wynosił 20 minut. Każdy wariant miał 5 powtórzeń z ziarnami 42–46. Stacja początkowo była pusta, a w modelu zamkniętym wszystkie roboty pracowały.
+Każdy przebieg trwał 168 godzin. Dwa pierwotne modele miały wykładnicze czasy ładowania o średniej 20 minut; nowy wariant indywidualny ma stałe czasy opisane poniżej. Każdy wariant miał 5 powtórzeń z ziarnami 42–46. Stacja początkowo była pusta, a w modelach zamkniętych wszystkie roboty pracowały.
 
 Model otwarty: λ ∈ {2, 4, 6} zgłoszeń/h, c ∈ {1, 2, 3}, napływ Poissona i deterministyczny. To 18 wariantów i 90 przebiegów. Niektóre kombinacje mają λ/(cμ) ≥1. Ich wykresy pokazują wyniki skończonej obserwacji przeciążenia, a nie stabilny stan ustalony. Duże kolejki tych wariantów mogą dominować wspólną skalę wykresu. Aby dokładniej porównać stabilne przypadki, uruchom własną serię np. λ ∈ {2}, c ∈ {1, 2, 3}.
 
 Model zamknięty: N ∈ {10, 15, 20}, c ∈ {1, 2, 3}, średni czas pracy 120 minut. To 9 wariantów i 45 przebiegów. Dostępność floty opisują średnia liczba pracujących robotów E[R] oraz ich udział A=E[R]/N.
 
-W każdym podkatalogu `open` i `closed` znajdują się:
+Model zamknięty z indywidualną obsługą: te same N, c i średni czas pracy, ale lista stałych czasów ładowarek wynosi `30, 10, 20` minut. Wariant c=1 używa pierwszej ładowarki (30 minut), c=2 pierwszych dwóch (30 i 10 minut), a c=3 wszystkich trzech. Wspólna kolejka jest FIFO; przy kilku wolnych stanowiskach robot trafia do najszybszego. To kolejne 9 wariantów i 45 przebiegów, zapisane w `demo_results/closed_individual`.
+
+W każdym podkatalogu `open`, `closed` i `closed_individual` znajdują się:
 
 - `runs.csv` — końcowe wyniki wszystkich powtórzeń;
 - `summary.csv` — średnie, odchylenia standardowe i liczby obserwowanych powtórzeń;
@@ -19,6 +21,7 @@ Wyniki można odtworzyć z głównego katalogu nowego projektu:
 
 ```sh
 python run_experiments.py --model both --duration-hours 168 --repetitions 5 --output examples/demo_results
+python run_experiments.py --model closed-individual --charger-times 30,10,20 --duration-hours 168 --repetitions 5 --output examples/demo_results
 ```
 
-Warianty mają tę samą długość obserwacji i te same średnie czasy obsługi. Wynik pojedynczego przebiegu może zależeć od losowania; odchylenie standardowe pokazuje zmienność między powtórzeniami i nie jest przedziałem ufności. W i T opierają się na obserwacjach zakończonych odpowiednio rozpoczęciem i końcem ładowania. Przy przeciążeniu część szczególnie długich wizyt pozostaje niezakończona w końcu obserwacji.
+Warianty mają tę samą długość obserwacji; rozkład i parametry obsługi zależą od wybranego modelu. Wynik pojedynczego przebiegu może zależeć od losowania pracy robotów lub napływu i ładowania; odchylenie standardowe pokazuje zmienność między powtórzeniami i nie jest przedziałem ufności. W i T opierają się na obserwacjach zakończonych odpowiednio rozpoczęciem i końcem ładowania. Przy przeciążeniu część szczególnie długich wizyt pozostaje niezakończona w końcu obserwacji.

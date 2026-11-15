@@ -19,7 +19,7 @@ def result_archive(results: list[SimulationResult], figures: dict) -> bytes:
     buffer = BytesIO()
     with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
         for result in results:
-            name = result.config.arrival_distribution if result.config.model == "open" else "closed"
+            name = result.config.variant_key
             archive.writestr(f"{name}/config.json", json.dumps(result.config.to_dict(), indent=2))
             archive.writestr(f"{name}/history.csv", pd.DataFrame(result.history).to_csv(index=False))
             archive.writestr(f"{name}/visits.csv", pd.DataFrame([v.to_dict() for v in result.visits]).to_csv(index=False))

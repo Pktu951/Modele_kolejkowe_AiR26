@@ -32,6 +32,8 @@ def _result_color(result: SimulationResult) -> str:
 
 def result_label(result: SimulationResult) -> str:
     if result.config.model == "closed":
+        if result.config.individual_service:
+            return f"Zamknięty · indywidualna obsługa, N={result.config.fleet_size}, c={result.config.chargers}"
         return f"Zamknięty, N={result.config.fleet_size}, c={result.config.chargers}"
     return DISTRIBUTION_LABELS[result.config.arrival_distribution]
 
@@ -105,7 +107,7 @@ def history_charts(results: list[SimulationResult]) -> dict:
             )
             _format_axis(axis, f"P(B=k) w czasie · {result_label(result)}", "Zajęte ładowarki k")
             figure.colorbar(image, ax=axis, label="Udział czasu")
-        figures[f"occupancy_{result.config.arrival_distribution if result.config.model == 'open' else 'closed'}"] = figure
+        figures[f"occupancy_{result.config.variant_key}"] = figure
     if results[0].config.model == "closed":
         figures["availability"] = _history_panel(
             results, [("availability", "A")],
@@ -157,5 +159,8 @@ def experiment_chart(summary: pd.DataFrame, columns: int = 2):
     for axis in list(axes.flat)[len(metrics):]:
         figure.delaxes(axis)
     figure.legend(*axes.flat[0].get_legend_handles_labels(), loc="outside lower center", fontsize=10, ncol=2)
-    figure.suptitle("Eksperymenty — średnia z powtórzeń ± jedno odchylenie standardowe", fontsize=13)
+    title = "Eksperymenty — średnia z powtórzeń ± jedno odchylenie standardowe"
+    if summary.iloc[0].get("service_type") == "individual_deterministic":
+        title = "Indywidualna obsługa · stałe czasy ładowarek\n" + title
+    figure.suptitle(title, fontsize=13)
     return figure

@@ -54,6 +54,11 @@ class SimulationOnlyChartTests(unittest.TestCase):
     def test_closed_charts_and_availability_have_no_references(self):
         self.check_chart_data([simulate(SimulationConfig(model="closed", duration=600))])
 
+    def test_individual_service_charts_and_availability_have_no_references(self):
+        self.check_chart_data([simulate(SimulationConfig(
+            model="closed", charger_times=(10.0, 30.0), duration=600,
+        ))])
+
 
 if __name__ == "__main__":
     unittest.main()

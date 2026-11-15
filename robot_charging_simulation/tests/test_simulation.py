@@ -5,6 +5,7 @@ from math import isfinite, isnan
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -126,6 +127,67 @@ class EventSimulationTests(unittest.TestCase):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 replace(SimulationConfig(), **changes).validate()
 
+    def test_individual_service_fixed_times_fifo_and_simultaneous_completions(self):
+        config = SimulationConfig(
+            model="closed", fleet_size=3, chargers=2,
+            charger_times=(4.0, 2.0), duration=5, sample_count=6,
+        )
+        engine = ChargingSimulation(config)
+        engine.work_duration = lambda: 1.0
+        with patch.object(engine, "charge_duration", side_effect=AssertionError("Fixed service must not draw a random time")):
+            result = engine.run()
+        # PL: W t=5 obie ładowarki się zwalniają. Czekający robot dostaje szybszą nr 2,
+        # PL: choć zdarzenie wolniejszej nr 1 było zapisane w kalendarzu wcześniej.
+        self.assertEqual([visit.charger_id for visit in result.visits], [1, 0, 1, 1])
+        self.assertEqual([visit.started_at for visit in result.visits], [1.0, 1.0, 3.0, 5.0])
+        self.assertEqual([visit.departed_at for visit in result.visits], [3.0, 5.0, 5.0, None])
+        for name, expected in {
+            "mean_queue_length": 3 / 5, "mean_system_size": 11 / 5,
+            "mean_wait_time": 3 / 4, "mean_system_time": 10 / 3,
+            "utilization": 4 / 5, "queue_empty_probability": 2 / 5,
+            "mean_available_robots": 4 / 5,
+        }.items():
+            self.assertAlmostEqual(result.summary[name], expected, msg=name)
+        for event in result.event_log:
+            self.assertEqual(event["working_robots"] + event["queue_length"] + event["busy_chargers"], 3)
+
+    def test_individual_service_reproducibility_and_equal_time_ties(self):
+        config = SimulationConfig(
+            model="closed", chargers=3, charger_times=(10.0, 10.0, 30.0),
+            fleet_size=8, duration=4000, sample_count=51,
+        )
+        engine = ChargingSimulation(config)
+        self.assertEqual(engine.select_free_charger(), 0)
+        first = engine.run()
+        second = simulate(replace(config, sample_count=201))
+        self.assertEqual(first.visits, second.visits)
+        for name, value in first.summary.items():
+            if isfinite(value):
+                self.assertAlmostEqual(value, second.summary[name], places=9, msg=name)
+        started = [visit for visit in first.visits if visit.started_at is not None]
+        self.assertEqual([visit.visit_id for visit in started], list(range(len(started))))
+        self.assertEqual([visit.started_at for visit in started], sorted(visit.started_at for visit in started))
+        for visit in first.visits:
+            if visit.departed_at is not None:
+                self.assertAlmostEqual(visit.departed_at - visit.started_at, config.charger_times[visit.charger_id])
+        for row in first.history[1:]:
+            self.assertAlmostEqual(row["mean_system_size"] + row["mean_available_robots"], config.fleet_size)
+            self.assertAlmostEqual(sum(row[f"prob_busy_{k}"] for k in range(4)), 1)
+
+    def test_individual_service_validation_and_json_parameters(self):
+        config = SimulationConfig(model="closed", charger_times=[10.0, 20.0])
+        config.validate()
+        self.assertEqual(config.charger_times, (10.0, 20.0))
+        self.assertNotIn("mean_charge_time", config.to_dict())
+        for changes in (
+            {"model": "open"}, {"charger_times": ()}, {"charger_times": (10.0,)},
+            {"charger_times": (0.0, 20.0)}, {"charger_times": (-1.0, 20.0)},
+            {"charger_times": (float("inf"), 20.0)}, {"charger_times": (float("nan"), 20.0)},
+            {"charger_times": (True, 20.0)},
+        ):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                replace(config, **changes).validate()
+
 
 class TheoryTests(unittest.TestCase):
     def test_known_mm1_solution(self):
@@ -162,6 +224,7 @@ class TheoryTests(unittest.TestCase):
     def test_unavailable_benchmarks_are_not_fabricated(self):
         self.assertIsNone(theoretical_metrics(SimulationConfig(arrival_distribution="deterministic")))
         self.assertIsNone(theoretical_metrics(SimulationConfig(arrival_rate=1, chargers=1, mean_charge_time=2)))
+        self.assertIsNone(theoretical_metrics(SimulationConfig(model="closed", charger_times=(10.0, 30.0))))
 
     def test_long_runs_approach_stationary_values(self):
         for model in ("open", "closed"):

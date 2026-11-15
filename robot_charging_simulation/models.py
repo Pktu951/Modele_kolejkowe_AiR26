@@ -10,6 +10,7 @@ class SimulationConfig:
     chargers: int = 2
     duration: float = 1440.0
     mean_charge_time: float = 20.0
+    charger_times: tuple[float, ...] | None = None
     arrival_rate: float = 4.0 / 60.0
     arrival_distribution: str = "poisson"
     fleet_size: int = 10
@@ -17,6 +18,25 @@ class SimulationConfig:
     seed: int = 42
     sample_count: int = 301
     max_events: int = 500_000
+
+    def __post_init__(self) -> None:
+        # PL: Po odczycie JSON lista czasów też staje się niezmienną krotką.
+        if isinstance(self.charger_times, list):
+            object.__setattr__(self, "charger_times", tuple(self.charger_times))
+
+    @property
+    def individual_service(self) -> bool:
+        return self.charger_times is not None
+
+    @property
+    def service_type(self) -> str:
+        return "individual_deterministic" if self.individual_service else "shared_exponential"
+
+    @property
+    def variant_key(self) -> str:
+        if self.individual_service:
+            return "closed_individual"
+        return "closed" if self.model == "closed" else self.arrival_distribution
 
     def validate(self) -> None:
         """Reject invalid parameters before creating events."""
@@ -39,9 +59,24 @@ class SimulationConfig:
         if self.model == "closed":
             if self.chargers > self.fleet_size:
                 raise ValueError("The closed model requires chargers <= fleet size.")
+        if self.individual_service:
+            if self.model != "closed":
+                raise ValueError("Individual charger times require the closed model.")
+            if not isinstance(self.charger_times, tuple) or len(self.charger_times) != self.chargers:
+                raise ValueError("Provide exactly one fixed charging time per charger.")
+            if any(
+                isinstance(value, bool) or not isinstance(value, (int, float))
+                or not isfinite(value) or value <= 0
+                for value in self.charger_times
+            ):
+                raise ValueError("Individual charging times must be finite and positive.")
 
     def to_dict(self) -> dict:
-        return asdict(self)
+        values = asdict(self)
+        if self.individual_service:
+            # PL: Ten wariant używa stałych czasów, więc wspólna średnia jest zbędna.
+            values.pop("mean_charge_time")
+        return values
 
 
 @dataclass

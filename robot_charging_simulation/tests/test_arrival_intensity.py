@@ -23,10 +23,10 @@ class ClosedArrivalIntensityTests(unittest.TestCase):
         result = simulate(SimulationConfig(model="closed", seed=41, duration=100))
         summary = closed_arrival_summary(result)
         self.assertEqual(summary, {
-            "time": 100, "arrivals": 10, "queue_length": 2,
-            "busy_chargers": 2, "working_robots": 6,
-            "alpha_per_hour": 0.5, "state_arrival_rate_per_hour": 3.0,
-            "observed_arrival_rate_per_hour": 6.0,
+            "time": 100, "arrivals": 11, "queue_length": 1,
+            "busy_chargers": 2, "working_robots": 7,
+            "alpha_per_hour": 0.5, "state_arrival_rate_per_hour": 3.5,
+            "observed_arrival_rate_per_hour": 6.6,
         })
         with ZipFile(BytesIO(result_archive([result], {}))) as archive:
             frame = pd.read_csv(BytesIO(archive.read("closed/arrival_intensity.csv")))
@@ -78,17 +78,17 @@ class ClosedArrivalIntensityTests(unittest.TestCase):
         result = simulate(SimulationConfig(model="closed", seed=41, duration=120, sample_count=2))
         at_100 = closed_arrival_summary(result, 100.0)
         self.assertEqual(at_100["time"], 100.0)
-        self.assertEqual(at_100["arrivals"], 10)
-        self.assertEqual(at_100["state_arrival_rate_per_hour"], 3.0)
-        self.assertEqual(at_100["observed_arrival_rate_per_hour"], 6.0)
+        self.assertEqual(at_100["arrivals"], 11)
+        self.assertEqual(at_100["state_arrival_rate_per_hour"], 3.5)
+        self.assertEqual(at_100["observed_arrival_rate_per_hour"], 6.6)
         at_50 = closed_arrival_summary(result, 50.0)
-        self.assertEqual(at_50["queue_length"], 3)
+        self.assertEqual(at_50["queue_length"], 0)
         self.assertEqual(at_50["busy_chargers"], 2)
-        self.assertEqual(at_50["working_robots"], 5)
-        self.assertEqual(at_50["arrivals"], 7)
+        self.assertEqual(at_50["working_robots"], 8)
+        self.assertEqual(at_50["arrivals"], 6)
         self.assertEqual(at_50["alpha_per_hour"], 0.5)
-        self.assertEqual(at_50["state_arrival_rate_per_hour"], 2.5)
-        self.assertEqual(at_50["observed_arrival_rate_per_hour"], 8.4)
+        self.assertEqual(at_50["state_arrival_rate_per_hour"], 4.0)
+        self.assertEqual(at_50["observed_arrival_rate_per_hour"], 7.2)
         self.assertEqual(result.summary["time"], 120)
         self.assertEqual(result.summary["arrivals"], 12)
         self.assertEqual(closed_arrival_summary(result, 120.0), closed_arrival_summary(result))

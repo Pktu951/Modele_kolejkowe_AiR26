@@ -66,6 +66,9 @@ class ExperimentTests(unittest.TestCase):
             self.assertNotIn("min_available", frame.columns)
             self.assertFalse(any("shortage" in name for name in frame.columns))
             self.assertIn("availability", frame.columns)
+            self.assertTrue(frame["service_type"].eq("shared_deterministic").all())
+            self.assertTrue(frame["fixed_charge_time"].eq(20.0).all())
+            self.assertTrue(frame["mean_charge_time"].isna().all())
 
     def test_individual_service_grid_prefixes_and_exports(self):
         config = SimulationConfig(model="closed", charger_times=(30.0, 10.0), duration=600)

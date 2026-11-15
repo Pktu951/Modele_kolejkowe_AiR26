@@ -46,6 +46,9 @@ class ChargingSimulation:
         return 1.0 / self.config.arrival_rate
 
     def charge_duration(self) -> float:
+        # PL: W zamkniętym modelu wszystkie ładowarki mają ten sam stały czas obsługi.
+        if self.config.model == "closed":
+            return self.config.mean_charge_time
         return self.charge_rng.expovariate(1.0 / self.config.mean_charge_time)
 
     def select_free_charger(self) -> int:
@@ -79,7 +82,7 @@ class ChargingSimulation:
         self.slots[charger_id] = visit
         self.busy += 1
         self.statistics.record_start(time - visit.arrived_at)
-        # PL: Nowy wariant nie losuje czasu: każda obsługa trwa tyle, ile przypisano ładowarce.
+        # PL: Wariant indywidualny używa osobnej stałej dla każdego stanowiska.
         duration = (
             self.config.charger_times[charger_id]
             if self.config.individual_service else self.charge_duration()
@@ -109,7 +112,7 @@ class ChargingSimulation:
         if self.config.model == "closed":
             # PL: Ten sam robot wraca do pracy i dopiero po niej ponownie się zgłosi.
             self.schedule(time + self.work_duration(), "arrival", visit.robot_id)
-        if self.queue and not self.config.individual_service:
+        if self.queue and self.config.model == "open":
             # PL: popleft wybiera robota czekającego najdłużej (FIFO).
             self.start_charge(self.queue.popleft(), charger_id, time)
 
@@ -144,7 +147,7 @@ class ChargingSimulation:
                 self.handle_arrival(time, robot_id)
             else:
                 self.handle_departure(time, charger_id)
-                if self.config.individual_service:
+                if self.config.model == "closed":
                     # PL: Najpierw zwalniamy wszystkie ładowarki kończące w tej samej chwili.
                     # PL: Dopiero potem roboty z kolejki dostają najszybsze wolne stanowiska.
                     more_departures = (

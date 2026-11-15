@@ -27,6 +27,7 @@ DISTRIBUTION_LABELS = {
 }
 SERVICE_LABELS = {
     "shared_exponential": "Jednakowe ładowarki · czasy wykładnicze",
+    "shared_deterministic": "Jednakowe ładowarki · stały czas",
     "individual_deterministic": "Indywidualne ładowarki · stałe czasy",
 }
 
@@ -130,7 +131,8 @@ def run_experiments(
                 "fleet_size": config.fleet_size if config.model == "closed" else None,
                 "arrival_rate_per_hour": config.arrival_rate * 60 if config.model == "open" else None,
                 "duration": config.duration,
-                "mean_charge_time": None if config.individual_service else config.mean_charge_time,
+                "mean_charge_time": config.mean_charge_time if config.model == "open" else None,
+                "fixed_charge_time": config.mean_charge_time if config.model == "closed" and not config.individual_service else None,
                 "service_type": config.service_type,
                 "charger_times": json.dumps(config.charger_times) if config.individual_service else None,
                 "mean_work_time": config.mean_work_time if config.model == "closed" else None,
@@ -151,7 +153,7 @@ def summarize_experiments(raw: pd.DataFrame) -> pd.DataFrame:
     metadata = [
         "scenario_id", "model", "distribution", "chargers", "fleet_size",
         "arrival_rate_per_hour", "duration", "mean_charge_time", "mean_work_time",
-        "offered_utilization", "service_type", "charger_times",
+        "offered_utilization", "service_type", "charger_times", "fixed_charge_time",
     ]
     for _, group in raw.groupby("scenario_id", sort=False):
         row = {name: group.iloc[0][name] for name in metadata}

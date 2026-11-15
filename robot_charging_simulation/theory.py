@@ -1,4 +1,4 @@
-"""Stationary benchmarks for M/M/c and the finite-source closed model."""
+"""M/M/c benchmarks, including a reserved legacy closed exponential model."""
 
 from math import exp, lgamma, log
 
@@ -44,7 +44,7 @@ def open_theory(config: SimulationConfig) -> dict | None:
 
 
 def closed_theory(config: SimulationConfig) -> dict | None:
-    """Solve the birth-death chain with N-n working sources and c chargers."""
+    """Retain the legacy exponential-service closed benchmark for future use."""
     # PL: Stałe i różne czasy obsługi nie pasują do tego wzoru dla jednakowych ładowarek.
     if config.individual_service:
         return None
@@ -80,4 +80,5 @@ def closed_theory(config: SimulationConfig) -> dict | None:
 
 def theoretical_metrics(config: SimulationConfig) -> dict | None:
     config.validate()
-    return closed_theory(config) if config.model == "closed" else open_theory(config)
+    # PL: Aktualne zamknięte modele mają stałą obsługę; stary wzór M/M/c tu nie pasuje.
+    return None if config.model == "closed" else open_theory(config)

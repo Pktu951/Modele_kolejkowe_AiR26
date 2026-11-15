@@ -92,7 +92,7 @@ class InstantaneousHistoryTests(unittest.TestCase):
     def test_seed_41_at_100_minutes_and_export(self):
         result = simulate(SimulationConfig(model="closed", seed=41, duration=100))
         states = instantaneous_history(result)
-        self.assertEqual(states[-1], {"time": 100, "queue_length": 2, "busy_chargers": 2, "system_size": 4})
+        self.assertEqual(states[-1], {"time": 100, "queue_length": 1, "busy_chargers": 2, "system_size": 3})
         with ZipFile(BytesIO(result_archive([result], {}))) as archive:
             frame = pd.read_csv(BytesIO(archive.read("closed/instantaneous_history.csv")))
             pd.testing.assert_frame_equal(frame, pd.DataFrame(states))

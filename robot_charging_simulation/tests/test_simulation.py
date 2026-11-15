@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from models import SimulationConfig
 from simulation import ChargingSimulation, SimulationLimitError, simulate
-from theory import theoretical_metrics
+from theory import closed_theory, theoretical_metrics
 
 
 class EventSimulationTests(unittest.TestCase):
@@ -66,6 +66,39 @@ class EventSimulationTests(unittest.TestCase):
         self.assertAlmostEqual(result.summary["mean_available_robots"], 0.6)
         for event in result.event_log:
             self.assertEqual(event["queue_length"] + event["busy_chargers"] + event["working_robots"], 2)
+
+    def test_closed_charging_is_fixed_while_work_remains_random(self):
+        config = SimulationConfig(model="closed", mean_charge_time=17.5, duration=4000)
+        engine = ChargingSimulation(config)
+        with patch.object(engine.charge_rng, "expovariate", side_effect=AssertionError("Closed charging must not draw a random time")):
+            result = engine.run()
+        completed = [visit for visit in result.visits if visit.departed_at is not None]
+        self.assertGreater(len(completed), 100)
+        for visit in completed:
+            self.assertAlmostEqual(visit.departed_at - visit.started_at, 17.5)
+        first_arrivals = [next(v.arrived_at for v in result.visits if v.robot_id == robot) for robot in range(config.fleet_size)]
+        self.assertGreater(len(set(first_arrivals)), 1)
+        self.assertEqual(config.service_type, "shared_deterministic")
+
+    def test_equal_charger_times_match_both_closed_variants(self):
+        for simultaneous in (False, True):
+            with self.subTest(simultaneous=simultaneous):
+                config = SimulationConfig(model="closed", chargers=3, mean_charge_time=2, duration=2000)
+                shared = ChargingSimulation(config)
+                individual = ChargingSimulation(replace(config, charger_times=(2.0,) * 3))
+                if simultaneous:
+                    # PL: Jednoczesne zakończenia muszą jednakowo rozstrzygać remisy.
+                    shared.work_duration = lambda: 1.0
+                    individual.work_duration = lambda: 1.0
+                first, second = shared.run(), individual.run()
+                self.assertEqual(first.visits, second.visits)
+                self.assertEqual(first.event_log, second.event_log)
+                for left, right in zip(first.history, second.history):
+                    for name, value in left.items():
+                        if isfinite(value):
+                            self.assertEqual(value, right[name], name)
+                        else:
+                            self.assertTrue(isnan(right[name]), name)
 
     def test_sample_frequency_does_not_change_results(self):
         base = SimulationConfig(duration=1234.567, seed=17, sample_count=51)
@@ -199,9 +232,9 @@ class TheoryTests(unittest.TestCase):
         }.items():
             self.assertAlmostEqual(result[name], expected)
 
-    def test_closed_no_queue_binomial_case(self):
+    def test_legacy_exponential_closed_no_queue_binomial_case(self):
         config = SimulationConfig(model="closed", fleet_size=4, chargers=4, mean_work_time=6, mean_charge_time=2)
-        result = theoretical_metrics(config)
+        result = closed_theory(config)
         self.assertAlmostEqual(result["mean_system_size"], 1)
         self.assertEqual(result["mean_queue_length"], 0)
         self.assertEqual(result["mean_wait_time"], 0)
@@ -209,9 +242,9 @@ class TheoryTests(unittest.TestCase):
         self.assertAlmostEqual(result["availability"], 0.75)
         self.assertAlmostEqual(result["mean_available_robots"], 3)
 
-    def test_closed_probability_balance_and_throughput(self):
+    def test_legacy_exponential_closed_probability_balance_and_throughput(self):
         config = SimulationConfig(model="closed", fleet_size=50, chargers=3)
-        result = theoretical_metrics(config)
+        result = closed_theory(config)
         probabilities = result["state_probabilities"]
         self.assertAlmostEqual(sum(probabilities), 1)
         self.assertAlmostEqual(sum(result["occupancy_probabilities"]), 1)
@@ -224,18 +257,18 @@ class TheoryTests(unittest.TestCase):
     def test_unavailable_benchmarks_are_not_fabricated(self):
         self.assertIsNone(theoretical_metrics(SimulationConfig(arrival_distribution="deterministic")))
         self.assertIsNone(theoretical_metrics(SimulationConfig(arrival_rate=1, chargers=1, mean_charge_time=2)))
+        self.assertIsNone(theoretical_metrics(SimulationConfig(model="closed")))
         self.assertIsNone(theoretical_metrics(SimulationConfig(model="closed", charger_times=(10.0, 30.0))))
 
-    def test_long_runs_approach_stationary_values(self):
-        for model in ("open", "closed"):
-            config = SimulationConfig(model=model, duration=600_000, seed=1234, sample_count=2)
-            observed = simulate(config).summary
-            expected = theoretical_metrics(config)
-            for name in ("mean_queue_length", "mean_system_size", "mean_wait_time", "mean_system_time"):
-                with self.subTest(model=model, metric=name):
-                    self.assertAlmostEqual(observed[name], expected[name], delta=0.07 * expected[name])
-            for name in ("queue_empty_probability", "utilization"):
-                self.assertAlmostEqual(observed[name], expected[name], delta=0.025)
+    def test_open_long_run_approaches_stationary_values(self):
+        config = SimulationConfig(duration=600_000, seed=1234, sample_count=2)
+        observed = simulate(config).summary
+        expected = theoretical_metrics(config)
+        for name in ("mean_queue_length", "mean_system_size", "mean_wait_time", "mean_system_time"):
+            with self.subTest(metric=name):
+                self.assertAlmostEqual(observed[name], expected[name], delta=0.07 * expected[name])
+        for name in ("queue_empty_probability", "utilization"):
+            self.assertAlmostEqual(observed[name], expected[name], delta=0.025)
 
 
 if __name__ == "__main__":

@@ -49,7 +49,8 @@ def sidebar_controls() -> tuple[SimulationConfig, list[str], bool]:
                     for index in range(chargers)
                 )
         else:
-            mean_charge = st.number_input("Średni czas ładowania 1/μ [min]", 0.01, 100_000.0, 20.0, key="mean_charge")
+            charge_label = "Stały czas ładowania 1/μ [min]" if model == "closed" else "Średni czas ładowania 1/μ [min]"
+            mean_charge = st.number_input(charge_label, 0.01, 100_000.0, 20.0, key="mean_charge")
         distributions = ["poisson"]
         arrival_rate = 4.0
         fleet_size, mean_work = 10, 120.0
@@ -243,6 +244,8 @@ def experiments_tab(config, distributions):
         repetitions = st.number_input("Liczba powtórzeń każdego wariantu", 1, 30, 5, key="repetitions")
         if config.individual_service:
             st.caption(f"Czas każdego przebiegu: {config.duration / 60:g} h; stałe czasy ładowania z listy powyżej.")
+        elif config.model == "closed":
+            st.caption(f"Czas każdego przebiegu: {config.duration / 60:g} h; stałe ładowanie: {config.mean_charge_time:g} min.")
         else:
             st.caption(f"Czas każdego przebiegu: {config.duration / 60:g} h; średnie ładowanie: {config.mean_charge_time:g} min.")
         submitted = st.form_submit_button("Uruchom eksperymenty", key="run_experiments")
@@ -320,8 +323,8 @@ def model_notes():
         "**Drugi napływ: deterministyczny D, model D/M/c/FIFO/∞/O.** Odstęp wynosi zawsze "
         "1/λ. Ma tę samą średnią intensywność co wariant Poissona; zmieniamy jedynie losowość napływu. "
         "Czasy ładowania nadal są wykładnicze.\n\n"
-        "**Model zamknięty z jednakowymi ładowarkami, M/M/c/FIFO/N/F:** N robotów pracuje i wraca do ładowania. "
-        "Średni czas pracy to 1/α, a średni czas ładowania to 1/μ. Roboty w kolejce lub przy ładowarkach "
+        "**Model zamknięty z jednakowymi ładowarkami, M/D/c/FIFO/N/F:** N robotów pracuje i wraca do ładowania. "
+        "Czas pracy jest wykładniczy o średniej 1/α, a każde ładowanie trwa stały czas 1/μ. Roboty w kolejce lub przy ładowarkach "
         "są niedostępne do pracy.\n\n"
         "**Model zamknięty — indywidualna obsługa:** każda ładowarka ma własny, stały czas ładowania. "
         "Czas pracy robota nadal jest losowy, wykładniczy. Kolejka jest wspólna i obsługiwana FIFO. "

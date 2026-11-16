@@ -1,5 +1,7 @@
 # Przykładowe eksperymenty
 
+To archiwum wyników i zrzutów wcześniejszej wersji projektu. Zawiera także wycofany napływ deterministyczny. Aktualny symulator obsługuje wyłącznie napływ Poissona, ze stałym lub wykładniczym ładowaniem. Zachowane pliki nie są automatycznie aktualizowane.
+
 Plik `open_fixed_service_preview.png` pokazuje model otwarty ze stałym ładowaniem 20 minut dla obu napływów: Poissona (M/D/c) i deterministycznego (D/D/c). Parametry: c=2, λ=4 zgłoszenia/h, czas symulacji 24 godziny i seed=42.
 
 Plik `arrival_intensity_preview.png` pokazuje panel intensywności z regulacją chwili odczytu dla zwykłego modelu zamkniętego: seed=41, N=10, c=2, pełny przebieg 120 minut, średnia praca 120 minut i stałe ładowanie 20 minut. Na suwaku i w polu liczbowym wybrano t=100 minut. Tabela rozróżnia α=0,5/h, λₙ=3,5/h i λ_obs=6,6/h (11 zgłoszeń do 100. minuty). Poniżej pokazuje stan w tej samej chwili: 1 oczekujący, 2 ładowane i 7 pracujących robotów.
@@ -23,11 +25,11 @@ W każdym podkatalogu `open`, `closed` i `closed_individual` znajdują się:
 - `scenarios.json` — konfiguracja każdego wariantu; ziarna kolejnych powtórzeń zwiększają się o 1;
 - `experiments.png` — porównanie wyników ze słupkami ± jedno odchylenie standardowe.
 
-Wyniki można odtworzyć z głównego katalogu nowego projektu:
+Aktualne serie można uruchomić poniższymi poleceniami. Model otwarty wygeneruje teraz 9 wariantów i 45 przebiegów, wyłącznie dla Poissona; nie odtworzy wycofanych wariantów z tego archiwum. Wybierz osobny katalog wynikowy:
 
 ```sh
-python run_experiments.py --model both --duration-hours 168 --repetitions 5 --output examples/demo_results
-python run_experiments.py --model closed-individual --charger-times 30,10,20 --duration-hours 168 --repetitions 5 --output examples/demo_results
+python run_experiments.py --model both --duration-hours 168 --repetitions 5 --output results/current
+python run_experiments.py --model closed-individual --charger-times 30,10,20 --duration-hours 168 --repetitions 5 --output results/current
 ```
 
 Warianty mają tę samą długość obserwacji. Czas obsługi jest zawsze stały, wspólny albo indywidualny dla ładowarki. Wynik pojedynczego przebiegu może zależeć od losowania pracy robotów lub napływu Poissona; odchylenie standardowe pokazuje zmienność między powtórzeniami i nie jest przedziałem ufności. W i T opierają się na obserwacjach zakończonych odpowiednio rozpoczęciem i końcem ładowania. Przy przeciążeniu część szczególnie długich wizyt pozostaje niezakończona w końcu obserwacji.

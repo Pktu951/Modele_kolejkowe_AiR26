@@ -79,7 +79,7 @@ def closed_theory(config: SimulationConfig) -> dict | None:
 
 
 def theoretical_metrics(config: SimulationConfig) -> dict | None:
-    """Avoid applying exponential-service formulas to current fixed-service models."""
+    """Keep the reserved reference calculations disconnected from current results."""
     config.validate()
-    # PL: Wszystkie aktualne modele mają stałą obsługę; dawne wzory tu nie pasują.
+    # PL: Wybór M/M/c nie włącza teorii; wyniki aplikacji nadal pochodzą z symulacji.
     return None

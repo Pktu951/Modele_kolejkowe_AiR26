@@ -10,6 +10,8 @@ from streamlit.testing.v1 import AppTest
 PROJECT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT))
 
+from metrics import closed_arrival_summary
+
 
 class AppTests(unittest.TestCase):
     def app(self):
@@ -41,23 +43,28 @@ class AppTests(unittest.TestCase):
         )
         self.assertTrue(any(expander.label == "Jak obliczamy te wartości?" for expander in app.expander))
 
-    def test_open_comparison_and_result_download(self):
+    def test_open_poisson_model_and_result_download(self):
         app = self.app()
+        self.assertEqual(len(app.multiselect), 0)
         self.assertEqual(app.number_input("mean_charge").label, "Czas ładowania 1/μ [min]")
         app.number_input("mean_charge").set_value(15.0)
         app.button("run_simulation").click().run(timeout=60)
         self.assertFalse(app.exception)
         results = app.session_state["simulation_results"][1]
-        self.assertEqual([r.config.arrival_distribution for r in results], ["poisson", "deterministic"])
+        self.assertEqual([r.config.arrival_distribution for r in results], ["poisson"])
         self.assertEqual([column for column in app.dataframe[0].value.columns], [
-            "Symulacja · Poisson (M/D/c)", "Symulacja · Deterministyczny (D/D/c)",
+            "Symulacja · Poisson (M/D/c)",
         ])
         for result in results:
             for visit in result.visits:
                 if visit.departed_at is not None:
                     self.assertAlmostEqual(visit.departed_at - visit.started_at, 15.0)
-        self.assertEqual(len(app.dataframe), 3)
-        self.assert_simulation_only(app, expected_columns=2)
+        self.assertEqual(len(app.dataframe), 2)
+        self.assert_simulation_only(app, expected_columns=1)
+        text = " ".join(element.value.lower() for element in app.markdown)
+        self.assertNotIn("napływ: deterministyczny", text)
+        self.assertNotIn("d/d/c", text)
+        self.assertNotIn("d/m/c", text)
         self.assertEqual(len(app.table), 0)
         self.assertEqual(len(app.metric), 0)
         self.assertEqual(len(app.get("download_button")), 1)
@@ -65,26 +72,66 @@ class AppTests(unittest.TestCase):
         app.run(timeout=60)
         self.assertEqual([r.summary["arrivals"] for r in app.session_state["simulation_results"][1]], arrivals)
 
-    def test_ddc_at_capacity_has_no_overload_warning_in_run_or_grid(self):
+    def test_poisson_fixed_service_at_capacity_warns_in_run_and_grid(self):
         app = self.app()
-        app.multiselect("distributions").set_value(["deterministic"])
         app.number_input("arrival_rate").set_value(6.0)
         app.number_input("duration_hours").set_value(1.0)
         app.button("run_simulation").click().run(timeout=60)
         self.assertFalse(app.exception)
-        self.assertFalse(app.warning)
-        self.assertEqual(app.session_state["simulation_results"][1][0].summary["mean_wait_time"], 0)
+        self.assertTrue(any("u ≥ 1" in item.value for item in app.warning))
         app.text_input("grid_chargers").set_value("2")
         app.text_input("grid_rates").set_value("6")
         app.number_input("repetitions").set_value(2)
         app.button("run_experiments").click().run(timeout=60)
         self.assertFalse(app.exception)
-        self.assertFalse(app.warning)
-        app.multiselect("distributions").set_value(["poisson"]).run(timeout=60)
+        self.assertTrue(any("Seria zawiera" in item.value for item in app.warning))
+
+    def test_exponential_service_selection_results_and_parameter_preservation(self):
+        app = self.app()
+        app.number_input("mean_charge").set_value(15.0).run(timeout=60)
+        app.selectbox("service_distribution").set_value("exponential").run(timeout=60)
+        self.assertEqual(app.number_input("mean_charge").value, 15.0)
+        self.assertEqual(app.number_input("mean_charge").label, "Średni czas ładowania 1/μ [min]")
+        app.button("run_simulation").click().run(timeout=60)
+        self.assertFalse(app.exception)
+        results = app.session_state["simulation_results"][1]
+        self.assertTrue(all(r.config.service_distribution == "exponential" for r in results))
+        self.assertEqual([r.config.arrival_distribution for r in results], ["poisson"])
+        self.assertEqual(list(app.dataframe[0].value.columns), [
+            "Symulacja · Poisson (M/M/c)",
+        ])
+        durations = [v.departed_at - v.started_at for v in results[0].visits if v.departed_at is not None]
+        self.assertGreater(len(set(round(value, 6) for value in durations)), 5)
+        self.assert_simulation_only(app, expected_columns=1)
+        app.selectbox("service_distribution").set_value("deterministic").run(timeout=60)
+        self.assertFalse(app.exception)
+        self.assertEqual(len(app.dataframe), 0)
+        self.assertEqual(app.number_input("mean_charge").value, 15.0)
+        app.selectbox("service_distribution").set_value("exponential").run(timeout=60)
+        app.radio("model_choice").set_value("Zamknięty").run(timeout=60)
+        self.assertEqual(app.selectbox("service_distribution").value, "exponential")
+        app.button("run_simulation").click().run(timeout=60)
+        self.assertFalse(app.exception)
+        self.assertEqual(app.session_state["simulation_results"][1][0].config.service_distribution, "exponential")
+
+    def test_exponential_grid_and_poisson_capacity_warning(self):
+        app = self.app()
+        app.selectbox("service_distribution").set_value("exponential").run(timeout=60)
+        app.number_input("arrival_rate").set_value(6.0)
+        app.number_input("duration_hours").set_value(1.0).run(timeout=60)
         self.assertTrue(app.warning)
-        app.multiselect("distributions").set_value(["deterministic"])
-        app.number_input("arrival_rate").set_value(7.0).run(timeout=60)
-        self.assertTrue(app.warning)
+        app.text_input("grid_chargers").set_value("2")
+        app.text_input("grid_rates").set_value("6")
+        app.number_input("repetitions").set_value(2)
+        app.button("run_experiments").click().run(timeout=60)
+        self.assertFalse(app.exception)
+        _, raw, summary, scenarios, _ = app.session_state["experiment_results"]
+        self.assertTrue(raw["service_distribution"].eq("exponential").all())
+        self.assertEqual(set(raw["distribution"]), {"poisson"})
+        self.assertTrue(summary["mean_charge_time"].eq(20.0).all())
+        self.assertEqual(scenarios[0].service_distribution, "exponential")
+        self.assertEqual(app.dataframe[0].value["Napływ"].tolist(), ["Poisson (M/M/c)"])
+        self.assertTrue(any("Seria zawiera" in warning.value for warning in app.warning))
 
     def test_closed_model_and_fleet_settings(self):
         app = self.app()
@@ -108,6 +155,60 @@ class AppTests(unittest.TestCase):
         self.assertNotIn("Ryzyko niedoboru P(R < m)", app.dataframe[0].value.index)
         self.assert_simulation_only(app, expected_columns=1)
         self.assert_closed_arrival_panel(app, result)
+        self.assertEqual(len(app.get("download_button")), 1)
+
+    def test_closed_exponential_service_and_selected_time_panel(self):
+        app = self.app()
+        app.radio("model_choice").set_value("Zamknięty").run(timeout=60)
+        app.number_input("mean_charge").set_value(15.0).run(timeout=60)
+        app.selectbox("service_distribution").set_value("exponential").run(timeout=60)
+        self.assertEqual(app.number_input("mean_charge").value, 15.0)
+        self.assertEqual(app.number_input("mean_charge").label, "Średni czas ładowania 1/μ [min]")
+        app.number_input("duration_hours").set_value(2.0)
+        app.button("run_simulation").click().run(timeout=60)
+        self.assertFalse(app.exception)
+        result = app.session_state["simulation_results"][1][0]
+        self.assertEqual(result.config.service_distribution, "exponential")
+        self.assertIn("Zamknięty M/M/c", app.dataframe[0].value.columns[0])
+        durations = [v.departed_at - v.started_at for v in result.visits if v.departed_at is not None]
+        self.assertGreater(len(set(round(value, 6) for value in durations)), 2)
+        self.assert_simulation_only(app, expected_columns=1)
+        self.assert_closed_arrival_panel(app, result)
+        with patch("simulation.simulate", side_effect=AssertionError("Seeking must not resimulate")):
+            app.number_input("arrival_time_closed_exponential_input").set_value(100.0).run(timeout=60)
+        self.assertFalse(app.exception)
+        expected = closed_arrival_summary(result, 100.0)
+        self.assertEqual(app.slider("arrival_time_closed_exponential_slider").value, 100.0)
+        self.assertEqual(app.table[0].value["Wartość [zgłoszenia/h]"].tolist(), [
+            expected["alpha_per_hour"], expected["state_arrival_rate_per_hour"], expected["observed_arrival_rate_per_hour"],
+        ])
+        app.selectbox("service_distribution").set_value("deterministic").run(timeout=60)
+        self.assertEqual(len(app.dataframe), 0)
+        self.assertEqual(app.number_input("mean_charge").value, 15.0)
+        app.selectbox("service_distribution").set_value("exponential").run(timeout=60)
+        app.radio("model_choice").set_value("Zamknięty — indywidualna obsługa").run(timeout=60)
+        self.assertNotIn("service_distribution", [widget.key for widget in app.selectbox])
+        app.button("run_simulation").click().run(timeout=60)
+        self.assertFalse(app.exception)
+        self.assertEqual(app.session_state["simulation_results"][1][0].config.service_distribution, "deterministic")
+
+    def test_closed_exponential_grid_uses_selected_service(self):
+        app = self.app()
+        app.radio("model_choice").set_value("Zamknięty").run(timeout=60)
+        app.selectbox("service_distribution").set_value("exponential").run(timeout=60)
+        app.text_input("grid_chargers").set_value("1,2")
+        app.text_input("grid_fleets").set_value("3,6")
+        app.number_input("repetitions").set_value(2)
+        app.button("run_experiments").click().run(timeout=60)
+        self.assertFalse(app.exception)
+        _, raw, summary, scenarios, _ = app.session_state["experiment_results"]
+        self.assertEqual(len(raw), 8)
+        self.assertEqual(len(summary), 4)
+        self.assertTrue(raw["service_distribution"].eq("exponential").all())
+        self.assertTrue(raw["fixed_charge_time"].isna().all())
+        self.assertTrue(summary["mean_charge_time"].eq(20.0).all())
+        self.assertTrue(all(config.service_distribution == "exponential" for config in scenarios))
+        self.assertEqual(set(app.dataframe[0].value["Napływ"]), {"Zamknięty M/M/c"})
         self.assertEqual(len(app.get("download_button")), 1)
 
     def test_individual_closed_service_and_parameter_changes(self):
@@ -223,7 +324,7 @@ class AppTests(unittest.TestCase):
         self.assertFalse(app.exception)
         self.assertTrue(any("co najmniej 3" in error.value for error in app.error))
 
-    def test_open_grid_runs_both_distributions(self):
+    def test_open_grid_runs_only_poisson_arrivals(self):
         app = self.app()
         app.text_input("grid_chargers").set_value("1,2")
         app.text_input("grid_rates").set_value("2,4")
@@ -231,8 +332,9 @@ class AppTests(unittest.TestCase):
         app.button("run_experiments").click().run(timeout=60)
         self.assertFalse(app.exception)
         _, raw, summary, _, _ = app.session_state["experiment_results"]
-        self.assertEqual(len(raw), 16)
-        self.assertEqual(len(summary), 8)
+        self.assertEqual(len(raw), 8)
+        self.assertEqual(len(summary), 4)
+        self.assertEqual(set(raw["distribution"]), {"poisson"})
         self.assertEqual(len(app.get("download_button")), 1)
 
     def test_closed_grid_reports_invalid_cases(self):
@@ -248,15 +350,18 @@ class AppTests(unittest.TestCase):
         self.assertEqual(len(stored[4]), 1)
         self.assertTrue(any("Pominięto" in warning.value for warning in app.warning))
 
-    def test_stale_results_and_empty_distribution_selection(self):
+    def test_stale_results_are_hidden_until_new_run(self):
         app = self.app()
         app.button("run_simulation").click().run(timeout=60)
         app.number_input("chargers").set_value(3).run(timeout=60)
         self.assertFalse(app.exception)
         self.assertEqual(len(app.dataframe), 0)
-        app.multiselect("distributions").set_value([]).run(timeout=60)
+        app.button("run_simulation").click().run(timeout=60)
         self.assertFalse(app.exception)
-        self.assertTrue(any("Wybierz" in item.value for item in app.info))
+        results = app.session_state["simulation_results"][1]
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].config.chargers, 3)
+        self.assertEqual(len(app.dataframe), 2)
 
     def test_invalid_closed_population_is_visible(self):
         app = self.app()
@@ -269,7 +374,6 @@ class AppTests(unittest.TestCase):
         app = self.app()
         app.number_input("arrival_rate").set_value(12.0)
         app.number_input("duration_hours").set_value(1.0)
-        app.multiselect("distributions").set_value(["deterministic"])
         app.button("run_simulation").click().run(timeout=60)
         self.assertFalse(app.exception)
         self.assertTrue(any("u ≥ 1" in item.value for item in app.warning))

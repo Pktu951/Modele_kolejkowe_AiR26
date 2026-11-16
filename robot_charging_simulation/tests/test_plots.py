@@ -1,6 +1,5 @@
 """Ensure result charts contain only measurements from simulation histories."""
 
-from dataclasses import replace
 from pathlib import Path
 import sys
 import unittest
@@ -13,7 +12,8 @@ import numpy as np
 
 from models import SimulationConfig
 from metrics import instantaneous_history
-from plots import history_charts
+from plots import experiment_chart, history_charts, result_label
+from experiments import run_experiments, summarize_experiments
 from simulation import simulate
 
 
@@ -56,15 +56,37 @@ class SimulationOnlyChartTests(unittest.TestCase):
             for figure in figures.values():
                 plt.close(figure)
 
-    def test_open_charts_show_both_simulations_without_references(self):
+    def test_open_charts_show_poisson_simulation_without_references(self):
         config = SimulationConfig(duration=600)
-        self.check_chart_data([
-            simulate(config),
-            simulate(replace(config, arrival_distribution="deterministic")),
-        ])
+        self.check_chart_data([simulate(config)])
+
+    def test_exponential_charts_and_experiments_label_poisson_model(self):
+        config = SimulationConfig(duration=600, service_distribution="exponential")
+        results = [simulate(config)]
+        self.assertEqual(result_label(results[0]), "Poisson (M/M/c)")
+        self.check_chart_data(results)
+        frame = summarize_experiments(run_experiments([r.config for r in results], 2))
+        figure = experiment_chart(frame)
+        try:
+            labels = figure.axes[0].get_legend_handles_labels()[1]
+            self.assertTrue(any("M/M/c" in text for text in labels))
+            self.assertEqual(len(labels), 1)
+        finally:
+            plt.close(figure)
 
     def test_closed_charts_and_availability_have_no_references(self):
         self.check_chart_data([simulate(SimulationConfig(model="closed", duration=600))])
+
+    def test_closed_exponential_charts_and_experiments_label_service_choice(self):
+        result = simulate(SimulationConfig(model="closed", service_distribution="exponential", duration=600))
+        self.assertIn("Zamknięty M/M/c", result_label(result))
+        self.check_chart_data([result])
+        frame = summarize_experiments(run_experiments([result.config], 2))
+        figure = experiment_chart(frame)
+        try:
+            self.assertIn("M/M/c", figure.axes[0].get_legend_handles_labels()[1][0])
+        finally:
+            plt.close(figure)
 
     def test_individual_service_charts_and_availability_have_no_references(self):
         self.check_chart_data([simulate(SimulationConfig(

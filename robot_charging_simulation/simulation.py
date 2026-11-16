@@ -19,7 +19,7 @@ class ChargingSimulation:
         config.validate()
         self.config = config
         # PL: Zachowujemy strumienie generatorów, aby seed nie zmieniał napływu ani pracy.
-        # PL: Dawny charge_rng pozostaje nieużywany, bo ładowanie ma teraz stały czas.
+        # PL: charge_rng losuje wykładnicze ładowanie w modelu otwartym i zamkniętym.
         seeds = Random(config.seed)
         self.arrival_rng = Random(seeds.getrandbits(64))
         self.charge_rng = Random(seeds.getrandbits(64))
@@ -39,15 +39,14 @@ class ChargingSimulation:
 
     def arrival_interval(self) -> float:
         """Poisson arrivals have exponential interarrival times."""
-        if self.config.arrival_distribution == "poisson":
-            # PL: Losujemy odstęp między zgłoszeniami, a nie liczbę minut z Poissona.
-            return self.arrival_rng.expovariate(self.config.arrival_rate)
-        # PL: Rozkład deterministyczny D: odstęp zawsze równy 1 / lambda.
-        return 1.0 / self.config.arrival_rate
+        # PL: Losujemy odstęp między zgłoszeniami, a nie liczbę minut z Poissona.
+        return self.arrival_rng.expovariate(self.config.arrival_rate)
 
     def charge_duration(self) -> float:
-        """Return the exact common charging duration for identical chargers."""
-        # PL: W obu modelach wpisany czas dotyczy każdego ładowania, bez losowania.
+        """Use the fixed duration or draw exponential service with the given mean."""
+        if self.config.service_distribution == "exponential":
+            # PL: Wpisany czas jest średnią; każde ładowanie losujemy osobno.
+            return self.charge_rng.expovariate(1.0 / self.config.mean_charge_time)
         return self.config.mean_charge_time
 
     def select_free_charger(self) -> int:

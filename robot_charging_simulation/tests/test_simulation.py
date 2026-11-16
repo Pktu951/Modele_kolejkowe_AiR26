@@ -18,9 +18,11 @@ class EventSimulationTests(unittest.TestCase):
     def test_fifo_time_integrals_and_horizon_ties(self):
         config = SimulationConfig(
             chargers=1, duration=5.0, arrival_rate=1.0, mean_charge_time=2.0,
-            arrival_distribution="deterministic", sample_count=6,
+            sample_count=6,
         )
         engine = ChargingSimulation(config)
+        # Use scripted gaps only in this fixture to check exact event timing.
+        engine.arrival_interval = lambda: 1.0
         result = engine.run()
         row = result.summary
         # PL: Pola pod schodkami: kolejka 4, system 8, zajęta ładowarka 4.
@@ -39,9 +41,9 @@ class EventSimulationTests(unittest.TestCase):
         self.assertEqual([v.departed_at for v in result.visits], [3.0, 5.0, None, None, None])
 
     def test_no_arrivals_does_not_invent_waiting_times(self):
-        result = simulate(SimulationConfig(
-            duration=0.5, arrival_rate=1, arrival_distribution="deterministic",
-        ))
+        engine = ChargingSimulation(SimulationConfig(duration=0.5, arrival_rate=1))
+        engine.arrival_interval = lambda: 1.0
+        result = engine.run()
         self.assertEqual(result.summary["arrivals"], 0)
         self.assertEqual(result.summary["mean_queue_length"], 0)
         self.assertEqual(result.summary["prob_busy_0"], 1)
@@ -78,6 +80,30 @@ class EventSimulationTests(unittest.TestCase):
         first_arrivals = [next(v.arrived_at for v in result.visits if v.robot_id == robot) for robot in range(config.fleet_size)]
         self.assertGreater(len(set(first_arrivals)), 1)
         self.assertEqual(config.service_type, "shared_deterministic")
+
+    def test_closed_exponential_service_repeats_and_conserves_fleet(self):
+        config = SimulationConfig(
+            model="closed", service_distribution="exponential", mean_charge_time=17.5,
+            chargers=3, fleet_size=8, duration=5000, sample_count=51,
+        )
+        first = simulate(config)
+        repeated = simulate(replace(config, sample_count=301))
+        self.assertEqual(first.visits, repeated.visits)
+        completed = [visit for visit in first.visits if visit.departed_at is not None]
+        self.assertGreater(len(completed), 100)
+        durations = [visit.departed_at - visit.started_at for visit in completed]
+        self.assertGreater(len(set(round(value, 6) for value in durations)), 100)
+        fixed = simulate(replace(config, service_distribution="deterministic"))
+        for robot in range(config.fleet_size):
+            initial = next(visit for visit in first.visits if visit.robot_id == robot)
+            other = next(visit for visit in fixed.visits if visit.robot_id == robot)
+            self.assertEqual(initial.arrived_at, other.arrived_at)
+        started = [visit for visit in first.visits if visit.started_at is not None]
+        self.assertEqual([visit.visit_id for visit in started], list(range(len(started))))
+        for row in first.history[1:]:
+            self.assertLessEqual(row["system_size"], config.fleet_size)
+            self.assertAlmostEqual(row["mean_system_size"] + row["mean_available_robots"], config.fleet_size)
+            self.assertAlmostEqual(sum(row[f"prob_busy_{k}"] for k in range(config.chargers + 1)), 1)
 
     def test_equal_charger_times_match_both_closed_variants(self):
         for simultaneous in (False, True):
@@ -131,32 +157,40 @@ class EventSimulationTests(unittest.TestCase):
         self.assertAlmostEqual(mean, 4.0, delta=0.12)
         self.assertAlmostEqual(variance, 16.0, delta=1.0)
 
-    def test_open_service_is_fixed_for_both_arrival_distributions(self):
-        for distribution in ("poisson", "deterministic"):
-            with self.subTest(distribution=distribution):
-                config = SimulationConfig(duration=5000, mean_charge_time=17.5, arrival_distribution=distribution)
-                engine = ChargingSimulation(config)
-                with patch.object(engine.charge_rng, "expovariate", side_effect=AssertionError("Open charging must not draw a random time")):
-                    result = engine.run()
-                completed = [visit for visit in result.visits if visit.departed_at is not None]
-                self.assertGreater(len(completed), 100)
-                for visit in completed:
-                    self.assertAlmostEqual(visit.departed_at - visit.started_at, 17.5)
-                slower = simulate(replace(config, mean_charge_time=40.0))
-                self.assertEqual([v.arrived_at for v in result.visits], [v.arrived_at for v in slower.visits])
-                self.assertEqual(config.service_type, "shared_deterministic")
+    def test_open_fixed_service_preserves_poisson_arrivals(self):
+        config = SimulationConfig(duration=5000, mean_charge_time=17.5)
+        engine = ChargingSimulation(config)
+        with patch.object(engine.charge_rng, "expovariate", side_effect=AssertionError("Open charging must not draw a random time")):
+            result = engine.run()
+        completed = [visit for visit in result.visits if visit.departed_at is not None]
+        self.assertGreater(len(completed), 100)
+        for visit in completed:
+            self.assertAlmostEqual(visit.departed_at - visit.started_at, 17.5)
+        slower = simulate(replace(config, mean_charge_time=40.0))
+        self.assertEqual([v.arrived_at for v in result.visits], [v.arrived_at for v in slower.visits])
+        self.assertEqual(config.service_type, "shared_deterministic")
 
-    def test_ddc_at_capacity_from_empty_has_no_waiting(self):
-        result = simulate(SimulationConfig(
-            chargers=2, duration=10, arrival_rate=1,
-            arrival_distribution="deterministic", mean_charge_time=2,
-        ))
-        self.assertEqual(result.summary["arrivals"], 10)
-        self.assertEqual(result.summary["completions"], 8)
-        self.assertEqual(result.summary["mean_queue_length"], 0)
-        self.assertEqual(result.summary["mean_wait_time"], 0)
-        self.assertEqual(result.summary["queue_empty_probability"], 1)
-        self.assertAlmostEqual(result.summary["utilization"], 17 / 20)
+    def test_exponential_service_has_requested_mean_and_variance(self):
+        engine = ChargingSimulation(SimulationConfig(service_distribution="exponential", mean_charge_time=4))
+        durations = [engine.charge_duration() for _ in range(20_000)]
+        mean = sum(durations) / len(durations)
+        variance = sum((value - mean) ** 2 for value in durations) / len(durations)
+        self.assertAlmostEqual(mean, 4.0, delta=0.12)
+        self.assertAlmostEqual(variance, 16.0, delta=1.0)
+
+    def test_exponential_service_repeats_and_keeps_arrival_stream_independent(self):
+        config = SimulationConfig(service_distribution="exponential", duration=5000)
+        first, repeated = simulate(config), simulate(config)
+        self.assertEqual(first.visits, repeated.visits)
+        deterministic_service = simulate(replace(config, service_distribution="deterministic"))
+        self.assertEqual([v.arrived_at for v in first.visits], [v.arrived_at for v in deterministic_service.visits])
+        slower_arrivals = simulate(replace(config, arrival_rate=config.arrival_rate / 2))
+        compared = 0
+        for left, right in zip(first.visits, slower_arrivals.visits):
+            if left.departed_at is not None and right.departed_at is not None:
+                self.assertAlmostEqual(left.departed_at - left.started_at, right.departed_at - right.started_at)
+                compared += 1
+        self.assertGreater(compared, 100)
 
     def test_event_limit_is_explicit(self):
         with self.assertRaises(SimulationLimitError):
@@ -166,8 +200,12 @@ class EventSimulationTests(unittest.TestCase):
         for changes in (
             {"chargers": 0}, {"duration": float("nan")}, {"mean_charge_time": 0},
             {"arrival_rate": -1}, {"sample_count": 1},
+            {"arrival_distribution": "deterministic"},
+            {"arrival_distribution": "unknown"},
             {"model": "closed", "fleet_size": 1, "chargers": 2},
             {"model": "closed", "fleet_size": 0},
+            {"service_distribution": "unknown"},
+            {"model": "closed", "service_distribution": "exponential", "charger_times": (20.0, 20.0)},
         ):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 replace(SimulationConfig(), **changes).validate()
@@ -268,9 +306,10 @@ class TheoryTests(unittest.TestCase):
 
     def test_unavailable_benchmarks_are_not_fabricated(self):
         self.assertIsNone(theoretical_metrics(SimulationConfig()))
-        self.assertIsNone(theoretical_metrics(SimulationConfig(arrival_distribution="deterministic")))
+        self.assertIsNone(theoretical_metrics(SimulationConfig(service_distribution="exponential")))
         self.assertIsNone(theoretical_metrics(SimulationConfig(arrival_rate=1, chargers=1, mean_charge_time=2)))
         self.assertIsNone(theoretical_metrics(SimulationConfig(model="closed")))
+        self.assertIsNone(theoretical_metrics(SimulationConfig(model="closed", service_distribution="exponential")))
         self.assertIsNone(theoretical_metrics(SimulationConfig(model="closed", charger_times=(10.0, 30.0))))
 
     def test_md1_long_run_matches_pollaczek_khinchine_means(self):
@@ -289,6 +328,35 @@ class TheoryTests(unittest.TestCase):
             with self.subTest(metric=name):
                 self.assertAlmostEqual(observed[name], expected[name], delta=0.07 * expected[name])
         self.assertAlmostEqual(observed["utilization"], 0.5, delta=0.025)
+
+    def test_mm1_long_run_matches_stationary_means(self):
+        result = simulate(SimulationConfig(
+            chargers=1, arrival_rate=0.5, mean_charge_time=1,
+            service_distribution="exponential", duration=200_000, seed=1234, sample_count=2,
+        ))
+        expected = {
+            "mean_queue_length": 0.5, "mean_system_size": 1.0,
+            "mean_wait_time": 1.0, "mean_system_time": 2.0,
+        }
+        for name, value in expected.items():
+            self.assertAlmostEqual(result.summary[name], value, delta=0.07 * value, msg=name)
+        self.assertAlmostEqual(result.summary["utilization"], 0.5, delta=0.025)
+
+    def test_closed_exponential_long_run_matches_finite_source_benchmark(self):
+        config = SimulationConfig(
+            model="closed", service_distribution="exponential", fleet_size=6, chargers=2,
+            mean_work_time=8, mean_charge_time=2, duration=200_000, seed=1234, sample_count=2,
+        )
+        observed = simulate(config).summary
+        expected = closed_theory(config)
+        for name in (
+            "mean_queue_length", "mean_system_size", "mean_wait_time", "mean_system_time",
+            "mean_available_robots", "availability", "utilization", "queue_empty_probability",
+        ):
+            self.assertAlmostEqual(observed[name], expected[name], delta=0.07 * expected[name], msg=name)
+        for count, probability in enumerate(expected["occupancy_probabilities"]):
+            self.assertAlmostEqual(observed[f"prob_busy_{count}"], probability, delta=0.015)
+        self.assertAlmostEqual(observed["completions"] / config.duration, expected["throughput"], delta=0.015)
 
 
 if __name__ == "__main__":

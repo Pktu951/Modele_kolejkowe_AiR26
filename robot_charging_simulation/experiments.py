@@ -21,15 +21,26 @@ METRIC_LABELS = {
     "mean_available_robots": "Średnia liczba dostępnych E[R]",
     "availability": "Dostępność floty A",
 }
-DISTRIBUTION_LABELS = {
-    "poisson": "Poisson (M/D/c)",
-    "deterministic": "Deterministyczny (D/D/c)",
+SERVICE_DISTRIBUTION_LABELS = {
+    "deterministic": "Stały (D)",
+    "exponential": "Wykładniczy (M)",
 }
 SERVICE_LABELS = {
     "shared_exponential": "Jednakowe ładowarki · czasy wykładnicze",
     "shared_deterministic": "Jednakowe ładowarki · stały czas",
     "individual_deterministic": "Indywidualne ładowarki · stałe czasy",
 }
+
+
+def queue_model_name(service_distribution: str) -> str:
+    """Return the arrival/service notation for identical chargers."""
+    service = {"exponential": "M", "deterministic": "D"}[service_distribution]
+    return f"M/{service}/c"
+
+
+def open_model_label(service_distribution: str = "deterministic") -> str:
+    """Label Poisson arrivals with the selected service distribution."""
+    return f"Poisson ({queue_model_name(service_distribution)})"
 
 
 def parse_charger_times(text: str) -> tuple[float, ...]:
@@ -67,7 +78,6 @@ def build_scenarios(
     charger_counts: list[int],
     fleet_sizes: list[int] | None = None,
     arrival_rates_per_hour: list[float] | None = None,
-    distributions: list[str] | None = None,
     charger_times: tuple[float, ...] | None = None,
 ) -> tuple[list[SimulationConfig], list[str]]:
     scenarios = []
@@ -91,11 +101,7 @@ def build_scenarios(
     else:
         for rate in arrival_rates_per_hour or [base.arrival_rate * 60]:
             for chargers in charger_counts:
-                for distribution in distributions or ["poisson", "deterministic"]:
-                    scenarios.append(replace(
-                        base, chargers=chargers, arrival_rate=rate / 60,
-                        arrival_distribution=distribution,
-                    ))
+                scenarios.append(replace(base, chargers=chargers, arrival_rate=rate / 60))
     for config in scenarios:
         config.validate()
     if not scenarios:
@@ -116,8 +122,7 @@ def run_experiments(
     total = len(scenarios) * repetitions
     for scenario_id, scenario in enumerate(scenarios):
         for repetition in range(repetitions):
-            # PL: Ziarno zmienia się między powtórzeniami dla losowego napływu lub pracy.
-            # PL: W D/D/c nie losujemy niczego, więc powtórzenia mają identyczny przebieg.
+            # PL: Ziarno zmienia się dla losowego napływu, ładowania lub pracy.
             config = replace(scenario, seed=scenario.seed + repetition, sample_count=2)
             result = simulate(config)
             row = dict(result.summary)
@@ -131,8 +136,9 @@ def run_experiments(
                 "fleet_size": config.fleet_size if config.model == "closed" else None,
                 "arrival_rate_per_hour": config.arrival_rate * 60 if config.model == "open" else None,
                 "duration": config.duration,
-                "mean_charge_time": None,
-                "fixed_charge_time": config.mean_charge_time if not config.individual_service else None,
+                "mean_charge_time": config.mean_charge_time if config.service_distribution == "exponential" else None,
+                "fixed_charge_time": config.mean_charge_time if config.service_type == "shared_deterministic" else None,
+                "service_distribution": config.service_distribution,
                 "service_type": config.service_type,
                 "charger_times": json.dumps(config.charger_times) if config.individual_service else None,
                 "mean_work_time": config.mean_work_time if config.model == "closed" else None,
@@ -153,7 +159,7 @@ def summarize_experiments(raw: pd.DataFrame) -> pd.DataFrame:
     metadata = [
         "scenario_id", "model", "distribution", "chargers", "fleet_size",
         "arrival_rate_per_hour", "duration", "mean_charge_time", "mean_work_time",
-        "offered_utilization", "service_type", "charger_times", "fixed_charge_time",
+        "offered_utilization", "service_type", "charger_times", "fixed_charge_time", "service_distribution",
     ]
     for _, group in raw.groupby("scenario_id", sort=False):
         row = {name: group.iloc[0][name] for name in metadata}

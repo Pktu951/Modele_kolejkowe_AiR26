@@ -9,11 +9,12 @@ class SimulationConfig:
     model: str = "open"
     chargers: int = 2
     duration: float = 1440.0
-    # PL: Zachowana nazwa pola; w obu modelach to dokładny, stały czas ładowania.
+    # PL: Dla stałej obsługi to dokładny czas, a dla wykładniczej średnia z rozkładu.
     mean_charge_time: float = 20.0
     charger_times: tuple[float, ...] | None = None
     arrival_rate: float = 4.0 / 60.0
     arrival_distribution: str = "poisson"
+    service_distribution: str = "deterministic"
     fleet_size: int = 10
     mean_work_time: float = 120.0
     seed: int = 42
@@ -33,13 +34,17 @@ class SimulationConfig:
     def service_type(self) -> str:
         if self.individual_service:
             return "individual_deterministic"
-        return "shared_deterministic"
+        return f"shared_{self.service_distribution}"
 
     @property
     def variant_key(self) -> str:
         if self.individual_service:
             return "closed_individual"
-        return "closed" if self.model == "closed" else self.arrival_distribution
+        # PL: Zachowujemy dawne nazwy dla stałej obsługi; wykładnicza ma osobny eksport.
+        name = "closed" if self.model == "closed" else self.arrival_distribution
+        if self.service_distribution == "exponential":
+            return f"{name}_exponential"
+        return name
 
     def validate(self) -> None:
         """Reject invalid parameters before creating events."""
@@ -55,8 +60,10 @@ class SimulationConfig:
             value = getattr(self, name)
             if not isfinite(value) or value <= 0:
                 raise ValueError(f"{name} must be finite and positive.")
-        if self.arrival_distribution not in ("poisson", "deterministic"):
-            raise ValueError("Unknown arrival distribution.")
+        if self.arrival_distribution != "poisson":
+            raise ValueError("Only Poisson arrivals are supported in the open model.")
+        if self.service_distribution not in ("deterministic", "exponential"):
+            raise ValueError("Unknown service distribution.")
         if not isinstance(self.seed, int) or self.seed < 0:
             raise ValueError("Seed must be a nonnegative integer.")
         if self.model == "closed":
@@ -65,6 +72,8 @@ class SimulationConfig:
         if self.individual_service:
             if self.model != "closed":
                 raise ValueError("Individual charger times require the closed model.")
+            if self.service_distribution != "deterministic":
+                raise ValueError("Individual charger times require deterministic service.")
             if not isinstance(self.charger_times, tuple) or len(self.charger_times) != self.chargers:
                 raise ValueError("Provide exactly one fixed charging time per charger.")
             if any(

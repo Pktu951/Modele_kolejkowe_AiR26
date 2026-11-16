@@ -21,14 +21,17 @@ def main():
     parser.add_argument("--duration-hours", type=float, default=168)
     parser.add_argument(
         "--mean-charge-time", "--charge-time", dest="mean_charge_time", type=float, default=20,
-        help="Exact fixed charging duration in minutes for identical chargers in either model.",
+        help="Minutes: fixed duration, or exponential mean for identical chargers.",
     )
+    parser.add_argument("--service-distribution", choices=["deterministic", "exponential"], default="deterministic", help="Charging distribution for identical chargers in open and closed models.")
     parser.add_argument("--charger-times", help="Fixed times in minutes, in charger order; required for closed-individual.")
     parser.add_argument("--mean-work-time", type=float, default=120, help="Minutes.")
     parser.add_argument("--repetitions", type=int, default=5)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output", type=Path, default=Path("results"))
     args = parser.parse_args()
+    if args.model == "closed-individual" and args.service_distribution != "deterministic":
+        parser.error("closed-individual requires --service-distribution deterministic.")
     if args.model == "closed-individual" and args.charger_times is None:
         parser.error("closed-individual requires --charger-times, e.g. 10,30,20.")
     if args.model != "closed-individual" and args.charger_times is not None:
@@ -45,6 +48,7 @@ def main():
             chargers=1 if individual_service else 2,
             charger_times=time_pool[:1] if individual_service else None,
             mean_charge_time=args.mean_charge_time, mean_work_time=args.mean_work_time,
+            service_distribution=args.service_distribution,
             seed=args.seed,
         )
         scenarios, skipped = build_scenarios(

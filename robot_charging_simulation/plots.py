@@ -8,7 +8,7 @@ from matplotlib.ticker import MaxNLocator
 import numpy as np
 import pandas as pd
 
-from experiments import DISTRIBUTION_LABELS
+from experiments import open_model_label, queue_model_name
 from metrics import instantaneous_history
 from models import SimulationResult
 
@@ -16,7 +16,6 @@ from models import SimulationResult
 # PL: Na wykresach narastających kolor oznacza rozkład/model, a styl rozróżnia miary.
 SERIES_COLORS = {
     "poisson": "#1f77b4",
-    "deterministic": "#ff7f0e",
     "closed": "#2ca02c",
 }
 LINE_STYLES = (
@@ -36,8 +35,8 @@ def result_label(result: SimulationResult) -> str:
     if result.config.model == "closed":
         if result.config.individual_service:
             return f"Zamknięty · indywidualna obsługa, N={result.config.fleet_size}, c={result.config.chargers}"
-        return f"Zamknięty, N={result.config.fleet_size}, c={result.config.chargers}"
-    return DISTRIBUTION_LABELS[result.config.arrival_distribution]
+        return f"Zamknięty {queue_model_name(result.config.service_distribution)}, N={result.config.fleet_size}, c={result.config.chargers}"
+    return open_model_label(result.config.service_distribution)
 
 
 def _format_axis(axis, title: str, y_label: str, probability: bool = False):
@@ -164,12 +163,18 @@ def experiment_chart(summary: pd.DataFrame, columns: int = 2):
         layout="constrained", squeeze=False,
     )
     grouping = ["fleet_size"] if closed else ["arrival_rate_per_hour", "distribution"]
+    if "service_distribution" in summary.columns:
+        grouping.append("service_distribution")
     variants = summary["fleet_size" if closed else "arrival_rate_per_hour"].drop_duplicates().tolist()
     for axis, (metric, title, unit) in zip(axes.flat, metrics):
         for group_key, group in summary.groupby(grouping, dropna=False, sort=False):
             group = group.sort_values("chargers")
             key = group_key if isinstance(group_key, tuple) else (group_key,)
-            label = f"N={int(key[0])}" if closed else f"λ={key[0]:g}/h · {DISTRIBUTION_LABELS[key[1]]}"
+            label = f"N={int(key[0])}" if closed else (
+                f"λ={key[0]:g}/h · {open_model_label(key[2] if len(key) > 2 else 'deterministic')}"
+            )
+            if closed and group.iloc[0].get("service_type") != "individual_deterministic":
+                label += f" · {queue_model_name(key[1] if len(key) > 1 else 'deterministic')}"
             deviations = group[f"{metric}_std"].fillna(0).to_numpy()
             # PL: Różne wartości λ (lub N) mają różne style, ale zachowują kolor rozkładu.
             axis.errorbar(

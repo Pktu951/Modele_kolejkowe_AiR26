@@ -1,6 +1,7 @@
 """Grid validation, reproducibility, and downloadable archive contents."""
 
-from io import BytesIO
+from csv import DictReader
+from io import BytesIO, StringIO
 import json
 from pathlib import Path
 import sys
@@ -16,17 +17,58 @@ from simulation import simulate
 
 
 class ExperimentTests(unittest.TestCase):
+    def test_closed_exponential_grid_metadata_and_selected_time_export(self):
+        base = SimulationConfig(model="closed", service_distribution="exponential", duration=600, mean_charge_time=7)
+        scenarios, skipped = build_scenarios(base, [1, 2], fleet_sizes=[2, 4])
+        self.assertEqual(skipped, [])
+        self.assertEqual(len(scenarios), 4)
+        self.assertTrue(all(config.service_distribution == "exponential" for config in scenarios))
+        raw = run_experiments(scenarios, 2)
+        for frame in (raw, summarize_experiments(raw)):
+            self.assertTrue(frame["service_type"].eq("shared_exponential").all())
+            self.assertTrue(frame["service_distribution"].eq("exponential").all())
+            self.assertTrue(frame["mean_charge_time"].eq(7).all())
+            self.assertTrue(frame["fixed_charge_time"].isna().all())
+        fixed = simulate(SimulationConfig(model="closed", duration=600))
+        exponential = simulate(base)
+        with ZipFile(BytesIO(result_archive([fixed, exponential], {}, {"closed_exponential": 100.0}))) as archive:
+            self.assertIn("closed/config.json", archive.namelist())
+            settings = json.loads(archive.read("closed_exponential/config.json"))
+            self.assertEqual(simulate(SimulationConfig(**settings)).visits, exponential.visits)
+            snapshot = next(DictReader(StringIO(archive.read("closed_exponential/arrival_intensity.csv").decode())))
+            self.assertEqual(float(snapshot["time"]), 100.0)
+
+    def test_exponential_service_grid_metadata_and_reproducible_export(self):
+        base = SimulationConfig(service_distribution="exponential", duration=600, mean_charge_time=7)
+        scenarios, skipped = build_scenarios(base, [1, 2], arrival_rates_per_hour=[2])
+        self.assertEqual(skipped, [])
+        self.assertTrue(all(config.service_distribution == "exponential" for config in scenarios))
+        raw = run_experiments(scenarios, 2)
+        for frame in (raw, summarize_experiments(raw)):
+            self.assertTrue(frame["service_type"].eq("shared_exponential").all())
+            self.assertTrue(frame["service_distribution"].eq("exponential").all())
+            self.assertTrue(frame["mean_charge_time"].eq(7).all())
+            self.assertTrue(frame["fixed_charge_time"].isna().all())
+        fixed, exponential = simulate(SimulationConfig(duration=600)), simulate(base)
+        with ZipFile(BytesIO(result_archive([fixed, exponential], {}))) as archive:
+            self.assertIn("poisson/config.json", archive.namelist())
+            settings = json.loads(archive.read("poisson_exponential/config.json"))
+            self.assertEqual(settings["service_distribution"], "exponential")
+            self.assertEqual(simulate(SimulationConfig(**settings)).visits, exponential.visits)
+
     def test_grid_and_repetition_counts(self):
         scenarios, skipped = build_scenarios(SimulationConfig(duration=600), [1, 2], arrival_rates_per_hour=[2, 4])
-        self.assertEqual(len(scenarios), 8)
+        self.assertEqual(len(scenarios), 4)
+        self.assertTrue(all(config.arrival_distribution == "poisson" for config in scenarios))
         self.assertEqual(skipped, [])
         raw = run_experiments(scenarios, 2)
         summary = summarize_experiments(raw)
-        self.assertEqual(len(raw), 16)
-        self.assertEqual(len(summary), 8)
+        self.assertEqual(len(raw), 8)
+        self.assertEqual(len(summary), 4)
+        self.assertEqual(set(raw["distribution"]), {"poisson"})
         self.assertTrue(summary["repetitions"].eq(2).all())
         self.assertTrue(summary["mean_system_size_std"].notna().all())
-        self.assertEqual(raw["seed"].tolist(), [42, 43] * 8)
+        self.assertEqual(raw["seed"].tolist(), [42, 43] * 4)
         for frame in (raw, summary):
             self.assertTrue(frame["service_type"].eq("shared_deterministic").all())
             self.assertTrue(frame["fixed_charge_time"].eq(20.0).all())

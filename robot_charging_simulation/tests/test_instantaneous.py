@@ -22,9 +22,11 @@ class InstantaneousHistoryTests(unittest.TestCase):
     def test_exact_steps_include_events_between_samples_and_merge_ties(self):
         config = SimulationConfig(
             chargers=1, duration=5, arrival_rate=1,
-            arrival_distribution="deterministic", sample_count=2,
+            sample_count=2,
         )
         engine = ChargingSimulation(config)
+        # Scripted gaps make the expected steps independent of random draws.
+        engine.arrival_interval = lambda: 1.0
         engine.charge_duration = lambda: 2.0
         result = engine.run()
         states = instantaneous_history(result)
@@ -46,8 +48,9 @@ class InstantaneousHistoryTests(unittest.TestCase):
     def test_all_models_match_samples_and_keep_the_same_trace_when_sampling_changes(self):
         for config in (
             SimulationConfig(duration=600, sample_count=2),
-            SimulationConfig(duration=600, arrival_distribution="deterministic", sample_count=2),
+            SimulationConfig(duration=600, service_distribution="exponential", sample_count=2),
             SimulationConfig(model="closed", duration=600, sample_count=2),
+            SimulationConfig(model="closed", service_distribution="exponential", duration=600, sample_count=2),
             SimulationConfig(model="closed", charger_times=(30.0, 10.0), duration=600, sample_count=2),
         ):
             with self.subTest(variant=config.variant_key):
@@ -70,7 +73,9 @@ class InstantaneousHistoryTests(unittest.TestCase):
                         self.assertLessEqual(state["system_size"], config.fleet_size)
 
     def test_empty_station_keeps_both_window_endpoints(self):
-        result = simulate(SimulationConfig(duration=0.5, arrival_rate=1, arrival_distribution="deterministic"))
+        engine = ChargingSimulation(SimulationConfig(duration=0.5, arrival_rate=1))
+        engine.arrival_interval = lambda: 1.0
+        result = engine.run()
         self.assertEqual(instantaneous_history(result), [
             {"time": 0, "queue_length": 0, "busy_chargers": 0, "system_size": 0},
             {"time": 0.5, "queue_length": 0, "busy_chargers": 0, "system_size": 0},
@@ -79,8 +84,9 @@ class InstantaneousHistoryTests(unittest.TestCase):
     def test_steps_continue_after_the_event_log_limit(self):
         engine = ChargingSimulation(SimulationConfig(
             chargers=1, duration=600, arrival_rate=1,
-            arrival_distribution="deterministic", sample_count=2,
+            sample_count=2,
         ))
+        engine.arrival_interval = lambda: 1.0
         engine.charge_duration = lambda: 0.5
         result = engine.run()
         self.assertEqual(len(result.event_log), 500)

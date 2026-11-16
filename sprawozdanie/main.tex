@@ -56,7 +56,7 @@ Projekt przedstawia stację, w której kilka robotów korzysta z ograniczonej li
 Przyjęto następujące uproszczenia:
 \begin{itemize}
 \item jedna ładowarka obsługuje jednego robota, a rozpoczęte ładowanie trwa do końca;
-\item czasy ładowania są stałe; w podstawowych modelach wszystkie ładowarki są jednakowe;
+\item w podstawowych modelach ładowarki mają jednakowe parametry, a czas obsługi jest stały lub wykładniczy;
 \item kolejka nie ma limitu pojemności; nie uwzględnia się awarii, dojazdów ani zużycia energii;
 \item stacja rozpoczyna pusta, a w modelu zamkniętym wszystkie roboty początkowo pracują.
 \end{itemize}
@@ -71,6 +71,7 @@ Symbol & Znaczenie & Jednostka \\
 \midrule
 $c$, $N$ & Liczba ładowarek i liczba robotów w stałej flocie & szt. \\
 $d$, $d_i$ & Stały czas ładowania wspólny lub dla ładowarki $i$ & min \\
+$1/\mu$ & Średni czas ładowania przy obsłudze wykładniczej & min \\
 $\lambda$ & Intensywność napływu w modelu otwartym & zgłoszenia/h \\
 $\alpha$ & Intensywność zgłoszeń jednego pracującego robota & zgłoszenia/h \\
 \bottomrule
@@ -79,17 +80,17 @@ $\alpha$ & Intensywność zgłoszeń jednego pracującego robota & zgłoszenia/h
 \end{table}
 
 \subsection{Model otwarty}
-Robot przybywa z otoczenia, oczekuje, ładuje się i opuszcza model. Napływ nie zależy od zajętości stacji. Przygotowano dwa warianty o tej samej zadanej intensywności~$\lambda$:
+Robot przybywa z otoczenia, oczekuje, ładuje się i opuszcza model. Napływ jest zawsze Poissona i nie zależy od zajętości stacji. Odstępy między zgłoszeniami są losowane z rozkładu wykładniczego. Przygotowano dwa warianty obsługi:
 \begin{itemize}
-\item \textbf{M/D/c}: napływ Poissona, czyli losowe odstępy między zgłoszeniami wyznaczane z rozkładu wykładniczego. Roboty mogą przybywać w krótkich odstępach lub po dłuższej przerwie;
-\item \textbf{D/D/c}: zgłoszenia pojawiają się w równych odstępach. Cztery zgłoszenia na godzinę oznaczają przyjście jednego robota co 15 minut.
+\item \textbf{M/D/c}: każde ładowanie trwa dokładnie podany czas $d$;
+\item \textbf{M/M/c}: czas każdego ładowania jest losowany niezależnie z rozkładu wykładniczego o podanej średniej $1/\mu$.
 \end{itemize}
-W obu przypadkach każde ładowanie trwa dokładnie tyle samo. Zmieniamy więc sposób napływu, zachowując jednakowy czas obsługi. Jeżeli przez dłuższy czas napływa więcej robotów, niż stacja może naładować, kolejka rośnie. Przy losowym napływie krótkie kolejki mogą pojawiać się także wtedy, gdy średnia wydajność stacji jest wystarczająca.
+Porównujemy tę samą intensywność napływu i ten sam średni czas obsługi. Wpisane 20 minut oznacza więc stałe 20 minut albo średnią losowanych czasów. Jeżeli przez dłuższy czas napływa więcej robotów, niż stacja może naładować, kolejka rośnie. Krótkie kolejki mogą pojawiać się także wtedy, gdy średnia wydajność stacji jest wystarczająca.
 
 \subsection{Model zamknięty i indywidualna obsługa}
-Stała flota $N$ robotów powtarza cykl: praca, kolejka FIFO, ładowanie i powrót do pracy. Czas pracy jest losowany niezależnie z rozkładu wykładniczego, natomiast czas ładowania jest stały. Liczba ładowarek nie przekracza liczby robotów. W odróżnieniu od modelu otwartego nie pojawiają się nowi członkowie floty, lecz kolejne zgłoszenia tych samych robotów.
+Stała flota $N$ robotów powtarza cykl: praca, kolejka FIFO, ładowanie i powrót do pracy. Czas pracy jest losowany niezależnie z rozkładu wykładniczego. Obsługa może być stała (M/D/c) albo wykładnicza (M/M/c). Są to warianty ze skończonym źródłem: mniej pracujących robotów oznacza mniejszą intensywność kolejnych zgłoszeń. Liczba ładowarek nie przekracza liczby robotów, a do floty nie dochodzą nowi członkowie.
 
-Dodatkowy wariant zamknięty przypisuje każdej ładowarce własny czas $d_i$. Robot z początku kolejki trafia do najszybszej wolnej ładowarki, a remis rozstrzyga niższy numer stanowiska. W eksperymentach wariant z $c$ ładowarkami używa pierwszych $c$ pozycji podanej listy czasów. Jednakowe czasy i ten sam seed dają ten sam przebieg co w podstawowym modelu zamkniętym.
+Dodatkowy wariant zamknięty przypisuje każdej ładowarce własny, stały czas $d_i$. Robot z początku kolejki trafia do najszybszej wolnej ładowarki, a remis rozstrzyga niższy numer stanowiska. W eksperymentach wariant z $c$ ładowarkami używa pierwszych $c$ pozycji podanej listy czasów. Jednakowe czasy i ten sam seed dają ten sam przebieg co w podstawowym modelu zamkniętym ze stałą obsługą.
 
 \clearpage
 \section{Symulacja i mierzone wielkości}
@@ -109,23 +110,23 @@ Wykresy chwilowe pokazują stan w danym momencie. Średnie narastające opisują
 Projekt korzysta z Pythona, Streamlit, Matplotlib i pandas. Po instalacji \texttt{requirements.txt}, z katalogu projektu uruchamiamy:\par
 \texttt{python -m streamlit run app.py}.
 \begin{itemize}
-\item \textbf{Symulacja i wykresy}: parametry, seed, wyniki, wykresy i eksport CSV/PNG w ZIP.
+\item \textbf{Symulacja i wykresy}: parametry, wybór stałej lub wykładniczej obsługi, seed, wyniki, wykresy i eksport CSV/PNG w ZIP.
 \item \textbf{Eksperymenty}: listy wartości $c$, $N$ lub $\lambda$ oraz liczba powtórzeń.
 \item \textbf{Opis modeli i miar}: założenia i interpretacja wyników.
 \end{itemize}
 W zamkniętych modelach suwak czasu odczytuje stan i intensywności z zapisanej trajektorii. Wykres czasu pokazuje $W$; czas pobytu w systemie pozostaje w tabeli i eksporcie.
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.92\linewidth]{ui.png}
-\caption{Zrzut ekranu z aplikacji: $c=2$, $d=20$ min, $\lambda=4$/h, 24 h, seed 42. Wyniki tego pojedynczego przebiegu różnią się od średnich z powtórzeń.}\label{fig:ui}
+\includegraphics[width=0.75\linewidth,trim=0 0 0 225,clip]{ui.jpg}
+\caption{Wyniki w aplikacji dla M/M/c: $c=2$, średnie ładowanie 20 min, $\lambda=4$/h, 24 h, seed 42. To pojedynczy przebieg, a nie średnie z powtórzeń.}\label{fig:ui}
 \end{figure}
 
 \clearpage
 \section{Eksperymenty symulacyjne}
-Serie wykonano dla 168 godzin obserwacji i pięciu powtórzeń z seedami od 42 do 46. Tabele przedstawiają średnie z powtórzeń. Wszystkie pomiary obejmują rozruch od pustej stacji. 
+Każdy wariant badano przez 168 godzin, w pięciu powtórzeniach z seedami od 42 do 46. Tabele podają średnie z powtórzeń, z uwzględnieniem rozruchu od pustej stacji.
 
-\subsection{Wpływ napływu i liczby ładowarek}
-Przyjęto cztery zgłoszenia na godzinę, 20 minut ładowania i od jednej do trzech ładowarek. Kolumna $\rho$ pokazuje stosunek napływu do wydajności; wartość większa od 1 oznacza przeciążenie.
+\subsection{Rodzaj obsługi i liczba ładowarek}
+Dla napływu Poissona $\lambda=4$/h porównano od jednej do trzech ładowarek, ze stałą obsługą 20 min lub wykładniczą o średniej 20 min. Kolumna $\rho$ to stosunek napływu do średniej wydajności.
 \begin{table}[H]
 \centering\small
 % BEGIN GENERATED TABLE: open
@@ -134,39 +135,43 @@ Przyjęto cztery zgłoszenia na godzinę, 20 minut ładowania i od jednej do trz
 Model & $c$ & $\rho$ & $Q$ & $W\pm s_W$ [min] & $u$ [\%] \\
 \midrule
 M/D/c & 1 & 1,33 & 71,243 & \(1108,400 \pm 205,404\) & 99,8 \\
-D/D/c & 1 & 1,33 & 83,750 & \(1257,500 \pm 0,000\) & 99,9 \\
+M/M/c & 1 & 1,33 & 69,285 & \(1066,535 \pm 313,401\) & 99,6 \\
 M/D/c & 2 & 0,67 & 0,475 & \(7,367 \pm 1,747\) & 63,9 \\
-D/D/c & 2 & 0,67 & 0,000 & \(0,000 \pm 0,000\) & 66,5 \\
+M/M/c & 2 & 0,67 & 1,008 & \(15,567 \pm 6,374\) & 64,1 \\
 M/D/c & 3 & 0,44 & 0,073 & \(1,133 \pm 0,189\) & 42,6 \\
-D/D/c & 3 & 0,44 & 0,000 & \(0,000 \pm 0,000\) & 44,4 \\
+M/M/c & 3 & 0,44 & 0,151 & \(2,324 \pm 1,200\) & 42,8 \\
 \bottomrule
 \end{tabular}
 % END GENERATED TABLE: open
-\caption{Model otwarty. $s_W$ jest odchyleniem standardowym między pięcioma powtórzeniami, nie przedziałem ufności.}\label{tab:open}
+\caption{Model otwarty. $s_W$ to odchylenie standardowe z pięciu powtórzeń.}\label{tab:open}
 \end{table}
-Jedna ładowarka może obsłużyć trzy roboty na godzinę, a przybywają cztery, więc kolejka narasta. Podane czasy opisują wyłącznie badaną długość symulacji. Dwie ładowarki mogą obsłużyć sześć robotów na godzinę; średnie oczekiwanie przy napływie Poissona maleje wtedy do około 7,37 min. Przy równych odstępach nie powstaje kolejka. Pięć powtórzeń D/D/c jest identycznych, ponieważ ani napływ, ani obsługa nie są losowane.
+Dla $c=1$ napływ przekracza średnią wydajność 3/h, więc wyniki opisują narastającą kolejkę w skończonym czasie. Dla $c=2$ uzyskano $W=7{,}37$ min przy stałej obsłudze i $15{,}57$ min przy wykładniczej. Trzecia ładowarka zmniejszyła te czasy do 1,13 i 2,32 min.
 
 \subsection{Wpływ liczby robotów i ładowarek w zamkniętej flocie}
-Porównano floty 10, 15 i 20 robotów przy jednej, dwóch i trzech ładowarkach. Średnia praca trwała 120 minut, a ładowanie 20 minut. Tabela~\ref{tab:closed} przedstawia flotę 10 robotów, a rysunek~\ref{fig:closed} wszystkie badane floty.
+Porównano $N=10,15,20$ i $c=1,2,3$ dla obu rodzajów obsługi. Średni czas pracy wynosił 120 min, a stały lub średni czas ładowania 20 min. Tabela~\ref{tab:closed} dotyczy $N=10$, a rysunek~\ref{fig:closed} wszystkich flot.
 \begin{table}[H]
 \centering\small
 % BEGIN GENERATED TABLE: closed
-\begin{tabular}{rrrrrr}
+\begin{tabular}{lrrrrrr}
 \toprule
-$c$ & $Q$ & $W$ [min] & $E[R]$ & $u$ [\%] & $A$ [\%] \\
+Model & $c$ & $Q$ & $W$ [min] & $E[R]$ & $u$ [\%] & $A$ [\%] \\
 \midrule
-1 & 2,865 & 57,963 & 6,153 & 98,2 & 61,5 \\
-2 & 0,344 & 5,035 & 8,289 & 68,3 & 82,9 \\
-3 & 0,054 & 0,766 & 8,540 & 46,9 & 85,4 \\
+M/D/c & 1 & 2,865 & 57,963 & 6,153 & 98,2 & 61,5 \\
+M/M/c & 1 & 3,108 & 65,252 & 5,943 & 94,9 & 59,4 \\
+M/D/c & 2 & 0,344 & 5,035 & 8,289 & 68,3 & 82,9 \\
+M/M/c & 2 & 0,554 & 8,293 & 8,106 & 67,0 & 81,1 \\
+M/D/c & 3 & 0,054 & 0,766 & 8,540 & 46,9 & 85,4 \\
+M/M/c & 3 & 0,085 & 1,210 & 8,497 & 47,3 & 85,0 \\
 \bottomrule
 \end{tabular}
 % END GENERATED TABLE: closed
 \caption{Model zamknięty dla $N=10$. Dostępny robot pracuje poza stacją.}\label{tab:closed}
 \end{table}
+Dla $c=2$ zmiana obsługi ze stałej na wykładniczą zwiększyła $W$ z 5,04 do 8,29 min.
 \begin{figure}[H]
 \centering
 \includegraphics[width=\linewidth]{closed_experiment.png}
-\caption{Wpływ $c$ i $N$ na oczekiwanie oraz dostępność.}\label{fig:closed}
+\caption{Stała i wykładnicza obsługa. Słupki oznaczają jedno odchylenie standardowe.}\label{fig:closed}
 \end{figure}
 \clearpage
 \subsection{Ładowarki o indywidualnych czasach obsługi}
@@ -178,19 +183,19 @@ Dla 10 robotów, dwóch ładowarek i średniego czasu pracy 120 minut porównano
 \toprule
 Obsługa & $d_1;d_2$ [min] & Wydajność [roboty/h] & $W$ [min] & $A$ [\%] \\
 \midrule
-Wspólna obsługa & 20; 20 & 6,0 & 5,035 & 82,9 \\
+Wspólna stała & 20; 20 & 6,0 & 5,035 & 82,9 \\
 Indywidualna & 20; 20 & 6,0 & 5,035 & 82,9 \\
 Indywidualna & 15; 30 & 6,0 & 5,005 & 83,0 \\
 Indywidualna & 10; 30 & 8,0 & 2,151 & 87,5 \\
 \bottomrule
 \end{tabular}
 % END GENERATED TABLE: individual
-\caption{Warianty wspólnej i indywidualnej obsługi. Każdy czas $d_i$ jest stały.}\label{tab:individual}
+\caption{Wspólna stała i indywidualna obsługa. Każdy czas $d_i$ jest stały.}\label{tab:individual}
 \end{table}
 Warianty z czasami 20 i 20 min dały identyczne wyniki. Czasy 15 i 30 min mają tę samą nominalną wydajność 6/h, a uzyskane średnie były zbliżone. Nie ma podstaw, by z tej niewielkiej różnicy wnioskować o przewadze jednego wariantu. Konfiguracja 10 i 30 min skróciła oczekiwanie, ale ma też większą wydajność 8/h. Nie jest to dowód na korzyść samej reguły przydziału.
 
 \subsection{Odczyt stanu i interpretacja wyników}
-Przeprowadzono osobny przebieg zamknięty dla 10 robotów i dwóch ładowarek. Ładowanie trwało 20 minut, średnia praca 120 minut, a czas symulacji 100 minut. Użyto seeda 41. Na końcu czekał jeden robot, dwa były ładowane, a siedem pracowało. Do stacji wpłynęło 11 zgłoszeń, rozpoczęto 10 ładowań i zakończono 8.
+Przeprowadzono osobny przebieg zamknięty M/D/c dla 10 robotów i dwóch ładowarek. Każde ładowanie trwało 20 minut, średnia praca 120 minut, a czas symulacji 100 minut. Użyto seeda 41. Na końcu czekał jeden robot, dwa były ładowane, a siedem pracowało. Do stacji wpłynęło 11 zgłoszeń, rozpoczęto 10 ładowań i zakończono 8.
 \begin{figure}[H]
 \centering
 \includegraphics[width=\linewidth]{closed_trace.png}
@@ -208,8 +213,8 @@ Tabela intensywności pomaga odróżnić trzy informacje:
 \section{Podsumowanie i napotkane trudności}
 \textbf{Wnioski z eksperymentów}
 \begin{itemize}
-\item Dla $N=10$ druga ładowarka skróciła oczekiwanie z około 58 do 5 min i zwiększyła dostępność z 61,5\% do 82,9\%. Trzecia przyniosła mniejszą poprawę dostępności. Dobór $c$ wymaga uzgodnienia dopuszczalnego oczekiwania i kosztu stacji.
-\item Sama średnia intensywność napływu nie określa oczekiwania. Losowe skupienia zgłoszeń w Poissonie tworzą kolejkę także przy obciążeniu mniejszym od wydajności stacji.
+\item Dla $N=10$ i stałej obsługi druga ładowarka skróciła oczekiwanie z około 58 do 5 min i zwiększyła dostępność z 61,5\% do 82,9\%. Trzecia przyniosła mniejszą poprawę dostępności. Dobór $c$ wymaga uzgodnienia dopuszczalnego oczekiwania i kosztu stacji.
+\item Przy dwóch ładowarkach w obu modelach zaobserwowano dłuższe oczekiwanie dla wykładniczej obsługi niż dla stałej, mimo tej samej średniej. Sama średnia wydajność stacji nie wystarcza do oceny kolejki.
 \item W zamkniętej flocie wzrost zajętości stacji ogranicza liczbę pracujących źródeł i dalszy napływ. Nie ma tu jednego zewnętrznego parametru $\lambda$ dla całej floty.
 \item W porównaniu ładowarek o różnych czasach trzeba uwzględniać łączną wydajność. Równa liczba stanowisk nie oznacza równej zdolności obsługi.
 \end{itemize}
